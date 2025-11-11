@@ -24,7 +24,7 @@
 ## 目录结构
 
 ```
-F:\桂林理工智能体项目\ai-open-source\
+ai-open-source\
 │
 ├── README.md                        # 本文档（项目总览）
 ├── LICENSE                          # CC BY-NC 4.0 非商业许可
@@ -40,8 +40,7 @@ F:\桂林理工智能体项目\ai-open-source\
 │   ├── llm_api.py                   # LLM 预留服务
 │   ├── User.csv                     # 用户数据（演示用）
 │   ├── funasr-runtime-resources/    # 资源目录（无模型权重）
-│   ├── tests/                       # 测试目录（可自定义）
-│   └── ...（已清理无关文件）
+│   └── tests/                       # 测试目录（可自定义）
 │
 └── .github/
     └── copilot-instructions.md      # 开源合规检查清单
