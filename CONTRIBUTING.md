@@ -38,7 +38,7 @@ Add minimal tests for:
 
 ## Security
 
-If you discover a security issue DO NOT open a public issue. Email security contact (see SECURITY.md).
+If you discover a security issue DO NOT open a public issue(see SECURITY.md).
 
 ## Release Workflow
 
