@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+.env
+.env.*
+venv/
+
+# Node
+node_modules/
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Build / Dist
+dist/
+build/
+
+# Coverage / Reports
+.coverage
+coverage/
+
+# Local data
+User.csv
+# If User.csv is needed as template, rename to User.example.csv
+
+# Generated
+*.cache

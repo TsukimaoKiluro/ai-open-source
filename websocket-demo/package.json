@@ -1,0 +1,14 @@
+{
+  "name": "websocket-demo",
+  "version": "1.0.0",
+  "description": "WebSocket 聊天室示例",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "csv-parse": "^6.1.0",
+    "ws": "^8.2.3"
+  }
+}

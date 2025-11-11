@@ -1,0 +1,2727 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI方言政务助手</title>
+  <!-- 预加载 VAD 库 使用 unpkg -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script src="https://unpkg.com/onnxruntime-web@1.14.0/dist/ort.min.js"></script>
+    <script src="https://unpkg.com/@ricky0123/vad-web@0.0.7/dist/bundle.min.js"></script>
+    <style>
+      :root {
+        --color-darkest: #222831;
+        --color-dark: #393e46;
+        --color-primary: #00adb5;
+        --color-light: #eeeeee;
+        --color-lightest: #eeeeee;
+      }
+
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0;
+        background-color: #fff;
+        color: var(--color-darkest);
+        min-height: 100vh;
+      }
+
+      html {
+        background-color: #fff;
+      }
+
+      .header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: #fff;
+        background-image: linear-gradient(to bottom, #eeeeee 60%, #fff 100%);
+        box-shadow: 0 4px 12px rgba(34, 40, 49, 0.08);
+        z-index: 1000;
+        border-bottom: 1px solid #eeeeee;
+      }
+
+      .header-content {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .user-avatar {
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        background-color: var(--color-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 1.2em;
+        /* box-shadow: 0 2px 8px rgba(191, 36, 42, 0.3); */
+        border: 2px solid var(--color-light);
+        transition: transform 0.2s ease;
+      }
+
+      .user-avatar:hover {
+        transform: scale(1.05);
+      }
+
+      .user-info {
+        flex: 1;
+      }
+
+      .user-name {
+        font-weight: bold;
+        margin: 0;
+        color: var(--color-darkest);
+        font-size: 1.1em;
+      }
+
+      .user-status {
+        color: var(--color-dark);
+        font-size: 0.9em;
+        margin: 4px 0 0 0;
+      }
+
+      .main-content {
+        margin-top: 90px;
+        padding: 20px;
+        background-color: #fff;
+        border-radius: 20px;
+        /* box-shadow: 0 4px 16px rgba(191, 36, 42, 0.1); */
+        box-shadow: 0 4px 16px rgba(34, 40, 49, 0.06);
+        border: 1px solid #eeeeee;
+      }
+
+      h1 {
+        /* color: var(--color-lightest); */
+        font-size: 1.8em;
+        margin-bottom: 25px;
+        text-align: center;
+      }
+
+      #messages {
+        height: 400px;
+        border: 1px solid rgba(81, 81, 81, 0.15);
+        margin-bottom: 25px;
+        padding: 15px;
+        overflow-y: auto;
+        border-radius: 15px;
+        background-color: rgba(255, 255, 255, 0.15);
+      }
+
+      #messages div {
+        margin: 8px 0;
+        padding: 10px 15px;
+        border-radius: 12px;
+        background-color: #fff;
+        /* box-shadow: 0 2px 6px rgba(191, 36, 42, 0.1); */
+        box-shadow: 0 2px 6px rgba(34, 40, 49, 0.04);
+        transition: transform 0.2s ease;
+        color: var(--color-darkest);
+        border: 1px solid #eeeeee;
+      }
+
+      #messages div:hover {
+        transform: translateX(5px);
+      }
+
+      /* 用户语音输入消息样式 */
+      #messages .user-message {
+        background-color: #00adb5 !important;
+        color: #fff !important;
+        border-radius: 12px 12px 0 12px !important;
+        margin-left: auto;
+        margin-right: 0;
+        max-width: 70%;
+        text-align: right;
+        box-shadow: 0 2px 6px rgba(0, 173, 181, 0.3) !important;
+        border: 1px solid #00adb5 !important;
+        display: block;
+      }
+
+      #messages .user-message:hover {
+        transform: translateX(-5px);
+      }
+
+      /* 语言大模型回复样式 */
+      #messages .ai-message {
+        background-color: #fff !important;
+        color: #222831 !important;
+        border-radius: 12px 12px 12px 0 !important;
+        margin-right: auto;
+        margin-left: 0;
+        max-width: 70%;
+        text-align: left;
+        box-shadow: 0 2px 6px rgba(34, 40, 49, 0.04) !important;
+        border: 1px solid #eeeeee !important;
+        display: block;
+      }
+
+      #trong {
+        color: var(--color-primary);
+        color: #00adb5;
+      }
+      .interim-message {
+        margin: 8px 0;
+        padding: 10px 15px;
+        border-radius: 12px;
+        background-color: rgba(226, 103, 107, 0.06);
+        color: var(--color-darkest);
+        font-style: italic;
+        border: 1px dashed rgba(191, 36, 42, 0.08);
+      }
+
+      #messageForm {
+        display: flex;
+        gap: 12px;
+        padding: 15px;
+        border-radius: 15px;
+        background-color: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(83, 83, 83, 0.15);
+      }
+
+      #messageInput {
+        flex: 1;
+        padding: 12px 20px;
+        border: 1px solid #eeeeee;
+        border-radius: 12px;
+        font-size: 1em;
+        background-color: white;
+        color: var(--color-darkest);
+        /* box-shadow: inset 0 2px 4px rgba(191, 36, 42, 0.05); */
+        transition: all 0.2s ease;
+      }
+
+      #messageInput:focus {
+        outline: none;
+        box-shadow: inset 0 2px 4px rgba(43, 8, 9, 0.2),
+          0 0 0 3px var(--color-primary);
+      }
+
+      #messageInput::placeholder {
+        color: var(--color-light);
+      }
+      button {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 12px;
+        font-weight: 600;
+        color: white;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.95em;
+        box-shadow: 0 2px 6px rgba(10, 38, 57, 0.15);
+      }
+
+      button[type="submit"] {
+        background-color: var(--color-primary);
+        border: 1px solid rgba(139, 196, 234, 0.2);
+      }
+
+      button[type="submit"]:hover {
+        background-color: var(--color-dark);
+        transform: translateY(-2px);
+        border-color: var(--color-light);
+      }
+
+      #voiceButton {
+        background-color: var(--color-primary);
+      }
+
+      #voiceButton:hover {
+        background-color: var(--color-darkest);
+        transform: translateY(-2px);
+      }
+
+      #voiceButton.recording {
+        background-color: var(--color-primary);
+        animation: pulse 1.5s infinite;
+        box-shadow: 0 0 0 0 #00adb5;
+      }
+
+      #voiceButton.active {
+        background-color: var(--color-primary);
+        animation: pulse 1.5s infinite;
+        box-shadow: 0 0 0 0 #00adb5;
+      }
+
+      #micButton {
+        background-color: var(--color-primary);
+        padding: 12px 20px;
+      }
+
+      #micButton:hover {
+        background-color: var(--color-darkest);
+        transform: translateY(-2px);
+      }
+
+      .mic-selector {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px #00adb5;
+        z-index: 2000;
+        min-width: 400px;
+        max-width: 90%;
+        border: 2px solid var(--color-light);
+      }
+
+      .mic-selector.hidden {
+        display: none;
+      }
+
+      .mic-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1999;
+      }
+
+      .mic-overlay.hidden {
+        display: none;
+      }
+
+      .mic-selector h3 {
+        margin: 0 0 20px 0;
+        color: var(--color-darkest);
+        font-size: 1.3em;
+      }
+
+      .mic-list {
+        margin-bottom: 20px;
+      }
+
+      .mic-item {
+        padding: 12px 15px;
+        margin: 8px 0;
+        border: 2px solid #00adb5;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        background: white;
+      }
+
+      .mic-item:hover {
+        background: rgba(242, 189, 191, 0.3);
+        border-color: var(--color-light);
+        transform: translateX(5px);
+      }
+
+      .mic-item.selected {
+        background: var(--color-lightest);
+        border-color: var(--color-primary);
+        font-weight: bold;
+      }
+
+      .mic-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+
+      .mic-actions button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .mic-actions .confirm {
+        background-color: var(--color-primary);
+        color: white;
+      }
+
+      .mic-actions .confirm:hover {
+        background-color: var(--color-dark);
+      }
+
+      .mic-actions .cancel {
+        background-color: #e0e0e0;
+        color: #333;
+      }
+
+      .mic-actions .cancel:hover {
+        background-color: #d0d0d0;
+      }
+
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 #00adb5;
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(191, 36, 42, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(191, 36, 42, 0);
+        }
+      }
+
+      /* 模式切换样式 */
+      .mode-selector {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 15px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        margin-bottom: 15px;
+        border: 1px solid rgba(82, 82, 82, 0.15);
+      }
+
+      .mode-label {
+        font-weight: 600;
+        color: var(--color-darkest);
+        font-size: 0.95em;
+      }
+
+      .mode-buttons {
+        display: flex;
+        gap: 8px;
+      }
+
+      .mode-btn {
+        padding: 8px 16px;
+        border: 2px solid rgba(83, 83, 83, 0.3);
+        border-radius: 8px;
+        background: white;
+        color: var(--color-dark);
+        font-size: 0.9em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: none;
+      }
+
+      .mode-btn:hover {
+        background: rgba(173, 173, 173, 0.3);
+        border-color: var(--color-light);
+        transform: none;
+      }
+
+      .mode-btn.active {
+        background: var(--color-primary);
+        color: white;
+        border-color: var(--color-primary);
+      }
+
+      .mode-description {
+        font-size: 0.85em;
+        color: var(--color-dark);
+        margin-left: auto;
+        font-style: italic;
+      }
+
+      /* 按住录音按钮特殊样式 */
+      #voiceButton.press-to-talk {
+        background: linear-gradient(
+          135deg,
+          var(--color-light),
+          var(--color-primary)
+        );
+        position: relative;
+      }
+
+      #voiceButton.press-to-talk::after {
+        content: "按住说话";
+        position: absolute;
+        bottom: -20px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.75em;
+        white-space: nowrap;
+        color: var(--color-dark);
+      }
+
+      #voiceButton.press-to-talk.pressing {
+        background: var(--color-darkest);
+        animation: pulse 1.5s infinite;
+      }
+
+      #voiceButton.press-to-talk.pressing::after {
+        content: "录音中...";
+        color: var(--color-primary);
+        font-weight: bold;
+      }
+
+      /* 设置按钮和菜单样式 */
+      .settings-container {
+        position: relative;
+        margin-left: auto;
+      }
+
+      .settings-button {
+        background: var(--color-primary);
+        border: none;
+        border-radius: 15%;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        font-size: 1.2em;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        /* box-shadow: 0 2px 8px rgba(191, 36, 42, 0.3); */
+      }
+
+      .settings-button:hover {
+        background: var(--color-dark);
+        /* transform: rotate(90deg); */
+      }
+
+      .settings-dropdown {
+        position: absolute;
+        top: 50px;
+        right: 0;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        min-width: 400px;
+        max-height: 80vh;
+        overflow-y: auto;
+        z-index: 2000;
+        display: none;
+        border: 2px solid var(--color-light);
+      }
+
+      .settings-dropdown.show {
+        display: block;
+        animation: slideDown 0.3s ease;
+      }
+
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .settings-header {
+        padding: 20px;
+        border-bottom: 2px solid rgba(191, 36, 42, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .settings-header h3 {
+        margin: 0;
+        color: var(--color-darkest);
+        font-size: 1.2em;
+      }
+
+      .settings-close {
+        background: none;
+        border: none;
+        font-size: 1.5em;
+        color: var(--color-dark);
+        cursor: pointer;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s ease;
+      }
+
+      .settings-close:hover {
+        background: rgba(191, 36, 42, 0.1);
+        color: var(--color-primary);
+      }
+
+      .settings-body {
+        padding: 20px;
+      }
+
+      .settings-section {
+        margin-bottom: 25px;
+      }
+
+      .settings-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .settings-section-title {
+        font-size: 1em;
+        font-weight: 600;
+        color: var(--color-darkest);
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(191, 36, 42, 0.1);
+      }
+
+      .settings-param {
+        margin-bottom: 15px;
+      }
+
+      .settings-param-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 0.9em;
+        color: var(--color-dark);
+      }
+
+      .settings-param-name {
+        font-weight: 500;
+      }
+
+      .settings-param-value {
+        font-weight: 600;
+        color: var(--color-primary);
+        min-width: 60px;
+        text-align: right;
+      }
+
+      .settings-param-input {
+        width: 100%;
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(93, 93, 93, 0.1);
+        outline: none;
+        -webkit-appearance: none;
+      }
+
+      .settings-param-input::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--color-primary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .settings-param-input::-webkit-slider-thumb:hover {
+        background: var(--color-dark);
+        transform: scale(1.2);
+      }
+
+      .settings-param-input::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--color-primary);
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+      }
+
+      .settings-param-input::-moz-range-thumb:hover {
+        background: var(--color-dark);
+        transform: scale(1.2);
+      }
+
+      .settings-param-desc {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 5px;
+        font-style: italic;
+      }
+
+      .settings-actions {
+        display: flex;
+        gap: 10px;
+        padding-top: 15px;
+        border-top: 1px solid rgba(191, 36, 42, 0.1);
+      }
+
+      .settings-actions button {
+        flex: 1;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.95em;
+      }
+
+      .settings-save {
+        background: var(--color-primary);
+        color: white;
+      }
+
+      .settings-save:hover {
+        background: var(--color-dark);
+        transform: translateY(-2px);
+      }
+
+      .settings-reset {
+        background: #e0e0e0;
+        color: #333;
+      }
+
+      .settings-reset:hover {
+        background: #d0d0d0;
+      }
+
+      .settings-preset {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
+      .preset-btn {
+        padding: 6px 12px;
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(82, 82, 82, 0.15);
+        border-radius: 6px;
+        font-size: 0.85em;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        color: var(--color-dark);
+      }
+
+      .preset-btn:hover {
+        background: var(--color-lightest);
+        border-color: var(--color-primary);
+      }
+
+      .preset-btn.active {
+        background: var(--color-primary);
+        color: white;
+        border-color: var(--color-primary);
+      }
+
+      #audioButton {
+        background-color: #e53935;
+        color: #fff;
+      }
+
+      #audioButton:hover {
+        background-color: #b71c1c;
+      }
+
+      /* 用户语音输入消息样式 */
+      .user-message {
+        background-color: #00adb5;
+        color: #fff;
+        border-radius: 12px 12px 0 12px;
+        margin-left: auto;
+        margin-right: 0;
+        max-width: 70%;
+        text-align: right;
+        box-shadow: 0 2px 6px rgba(34, 40, 49, 0.04);
+        border: 1px solid #00adb5;
+      }
+
+      /* 语言大模型回复样式 */
+      .ai-message {
+        background-color: #fff;
+        color: #222831;
+        border-radius: 12px 12px 12px 0;
+        margin-right: auto;
+        margin-left: 0;
+        max-width: 70%;
+        text-align: left;
+        box-shadow: 0 2px 6px rgba(34, 40, 49, 0.04);
+        border: 1px solid #eeeeee;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="header-content">
+        <div class="user-avatar" id="userAvatar">访</div>
+        <div class="user-info">
+          <p class="user-name" id="userName">访客</p>
+          <p class="user-status">在线</p>
+        </div>
+        <div class="settings-container">
+          <button class="settings-button" id="settingsButton" title="设置">
+            三
+          </button>
+          <div class="settings-dropdown" id="settingsDropdown">
+            <div class="settings-header">
+              <h3>系统设置</h3>
+              <button class="settings-close" id="settingsClose">×</button>
+            </div>
+            <div class="settings-body">
+              <!-- VAD 参数设置 -->
+              <div class="settings-section">
+                <div class="settings-section-title">🎙️ 端点检测参数（VAD）</div>
+
+                <!-- 预设方案 -->
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">快速预设</span>
+                  </div>
+                  <div class="settings-preset">
+                    <button class="preset-btn" data-preset="fast">
+                      快速响应
+                    </button>
+                    <button class="preset-btn active" data-preset="balanced">
+                      平衡模式
+                    </button>
+                    <button class="preset-btn" data-preset="tolerant">
+                      容错模式
+                    </button>
+                    <button class="preset-btn" data-preset="custom">
+                      自定义
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 开始检测阈值 -->
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">开始检测阈值</span>
+                    <span class="settings-param-value" id="posThresholdValue"
+                      >0.5</span
+                    >
+                  </div>
+                  <input
+                    type="range"
+                    class="settings-param-input"
+                    id="posThreshold"
+                    min="0.3"
+                    max="0.9"
+                    step="0.05"
+                    value="0.5"
+                  />
+                  <div class="settings-param-desc">
+                    值越低越容易开始录音（推荐：0.4-0.6）
+                  </div>
+                </div>
+
+                <!-- 结束检测阈值 -->
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">结束检测阈值</span>
+                    <span class="settings-param-value" id="negThresholdValue"
+                      >0.35</span
+                    >
+                  </div>
+                  <input
+                    type="range"
+                    class="settings-param-input"
+                    id="negThreshold"
+                    min="0.15"
+                    max="0.6"
+                    step="0.05"
+                    value="0.35"
+                  />
+                  <div class="settings-param-desc">
+                    值越低越快结束录音（推荐：0.25-0.4）
+                  </div>
+                </div>
+
+                <!-- 停顿容忍帧数（后置缓冲） -->
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name"
+                      >后置缓冲（句尾保护）</span
+                    >
+                    <span class="settings-param-value" id="redemptionValue"
+                      >0.38s (12帧)</span
+                    >
+                  </div>
+                  <input
+                    type="range"
+                    class="settings-param-input"
+                    id="redemption"
+                    min="6"
+                    max="30"
+                    step="1"
+                    value="12"
+                  />
+                  <div class="settings-param-desc">
+                    静音后继续录音时长，保护句尾音节（推荐：10-14帧）
+                  </div>
+                </div>
+
+                <!-- 前置缓冲帧数（句首保护） -->
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name"
+                      >前置缓冲（句首保护）</span
+                    >
+                    <span class="settings-param-value" id="preSpeechValue"
+                      >0.19s (6帧)</span
+                    >
+                  </div>
+                  <input
+                    type="range"
+                    class="settings-param-input"
+                    id="preSpeech"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value="6"
+                  />
+                  <div class="settings-param-desc">
+                    语音前额外保留时长，保护句首音节（推荐：5-8帧）
+                  </div>
+                </div>
+
+                <!-- 最小语音帧数 -->
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">最小触发时长</span>
+                    <span class="settings-param-value" id="minSpeechValue"
+                      >0.13s (4帧)</span
+                    >
+                  </div>
+                  <!-- 置信度阈值 -->
+                  <div class="settings-param">
+                    <div class="settings-param-label">
+                      <span class="settings-param-name">置信度阈值</span>
+                      <span class="settings-param-value" id="confidenceValue"
+                        >0.7</span
+                      >
+                    </div>
+                    <input
+                      type="range"
+                      class="settings-param-input"
+                      id="confidenceThreshold"
+                      min="0.5"
+                      max="0.99"
+                      step="0.01"
+                      value="0.7"
+                    />
+                    <div class="settings-param-desc">
+                      端点检测置信度，越高越严格（推荐：0.6-0.8）
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    class="settings-param-input"
+                    id="minSpeech"
+                    min="2"
+                    max="10"
+                    step="1"
+                    value="4"
+                  />
+                  <div class="settings-param-desc">
+                    过滤短噪音（推荐：3-6帧）
+                  </div>
+                </div>
+              </div>
+
+              <!-- ASR Model Selection -->
+              <div class="settings-section">
+                <div class="settings-section-title">🤖 识别模型选择</div>
+
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">当前模型</span>
+                    <span class="settings-param-value" id="currentModelName"
+                      >加载中...</span
+                    >
+                  </div>
+                  <select
+                    class="settings-param-input"
+                    id="modelSelect"
+                    style="
+                      width: 100%;
+                      padding: 8px;
+                      border-radius: 4px;
+                      border: 1px solid #ddd;
+                    "
+                  >
+                    <option value="paraformer-zh">Paraformer-zh (默认)</option>
+                    <option value="paraformer-large">
+                      Paraformer-zh Large (高精度)
+                    </option>
+                  </select>
+                  <div class="settings-param-desc">
+                    更换模型需要等待加载时间
+                  </div>
+                </div>
+              </div>
+
+              <!-- LLM 提示词设置 -->
+              <div class="settings-section">
+                <div class="settings-section-title">💬 AI 提示词设置</div>
+
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">系统提示词</span>
+                  </div>
+                  <textarea
+                    class="settings-param-input"
+                    id="systemPrompt"
+                    rows="4"
+                    style="
+                      width: 100%;
+                      padding: 8px;
+                      border-radius: 4px;
+                      border: 1px solid #ddd;
+                      resize: vertical;
+                      font-family: inherit;
+                    "
+                    placeholder="角色： 您是“政务通”AI助手，一名专业的数字政务顾问。
+核心任务： 为用户提供关于社保、公积金、医疗、户籍、税务等常见政务事务的政策解读与办理流程指南。
+回答原则：
+
+信息准确：严格依据中国相关法律法规与地方政府最新公开政策进行解答。对于无法确认的动态信息，务必引导用户前往官方平台或热线核实。
+
+流程清晰：分步骤说明办事流程，明确指出办理地点（线上平台/线下大厅）、所需材料、办理时限及关键注意事项。
+
+语言规范：使用简洁、专业、礼貌的书面语，避免歧义。关键信息（如材料名称、截止日期）可适当强调。
+
+主动引导：在解答结尾，主动提供下一步建议，例如：“您可以前往XX市人社局官网下载申请表”，或“建议您拨打12333热线确认您的具体缴费年限”。
+重要声明： 您提供的是通用性指南，不具法律效力。最终解释权与执行标准均以当地政务部门的官方通知为准。"
+                  ></textarea>
+                  <div class="settings-param-desc">
+                    每次与AI对话时，此提示词将作为系统角色发送
+                  </div>
+                </div>
+              </div>
+
+              <!-- 语音整合提交设置 -->
+              <div class="settings-section">
+                <div class="settings-section-title">⏱️ 语音整合提交</div>
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">整合等待时间 (秒)</span>
+                    <span class="settings-param-value" id="inactivityValue">4</span>
+                  </div>
+                  <input
+                    type="range"
+                    class="settings-param-input"
+                    id="inactivityTimeout"
+                    min="2"
+                    max="12"
+                    step="1"
+                    value="4"
+                  />
+                  <div class="settings-param-desc">
+                    从上一次语音结果开始，若在该时间内无新语音则整合期间所有识别文本一次性发送给 AI；否则继续等待。
+                  </div>
+                </div>
+              </div>
+
+                <div class="settings-param">
+                  <div class="settings-param-label">
+                    <span class="settings-param-name">预设提示词模板</span>
+                  </div>
+                  <select
+                    class="settings-param-input"
+                    id="promptTemplate"
+                    style="
+                      width: 100%;
+                      padding: 8px;
+                      border-radius: 4px;
+                      border: 1px solid #ddd;
+                    "
+                  >
+                    <option value="">选择模板...</option>
+                    <option value="dialect">1</option>
+                    <option value="teacher">2</option>
+                    <option value="friend">3</option>
+                    <option value="professional">4</option>
+                  </select>
+                  <div class="settings-param-desc">快速应用常用提示词模板</div>
+                </div>
+              </div>
+
+              <!-- 操作按钮 -->
+              <div class="settings-actions">
+                <button class="settings-reset" id="settingsReset">
+                  恢复默认
+                </button>
+                <button class="settings-save" id="settingsSave">
+                  保存并应用
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <h1>AI方言识别助手</h1>
+
+      <!-- 模式选择器 -->
+      <div class="mode-selector">
+        <span class="mode-label">录音模式:</span>
+        <div class="mode-buttons">
+          <button class="mode-btn" id="mode1Btn" data-mode="1">按住录音</button>
+          <button class="mode-btn active" id="mode2Btn" data-mode="2">
+            端点检测
+          </button>
+        </div>
+        <span class="mode-description" id="modeDescription"
+          >自动检测语音端点</span
+        >
+      </div>
+
+      <div id="messages"></div>
+      <form id="messageForm">
+        <input
+          type="text"
+          id="messageInput"
+          placeholder="请输入或说出您要识别的方言..."
+          required
+        />
+        <button type="button" id="voiceButton">开启语音检测</button>
+        <button type="button" id="micButton">选择麦克风</button>
+        <button type="button" id="audioButton">流式音频</button>
+        <button type="submit">发送</button>
+      </form>
+    </div>
+
+    <!-- 麦克风选择器 -->
+    <div class="mic-overlay hidden" id="micOverlay"></div>
+    <div class="mic-selector hidden" id="micSelector">
+      <h3>选择麦克风设备</h3>
+      <div class="mic-list" id="micList"></div>
+      <div class="mic-actions">
+        <button class="cancel" id="micCancel">取消</button>
+        <button class="confirm" id="micConfirm">确认</button>
+      </div>
+    </div>
+
+    <script type="module">
+  // 已通过 <script> 全局引入 marked.js，无需 import
+      const messagesDiv = document.getElementById("messages");
+      const messageForm = document.getElementById("messageForm");
+      const messageInput = document.getElementById("messageInput");
+      const voiceButton = document.getElementById("voiceButton");
+      const micButton = document.getElementById("micButton");
+      const micSelector = document.getElementById("micSelector");
+      const micOverlay = document.getElementById("micOverlay");
+      const micList = document.getElementById("micList");
+      const micCancel = document.getElementById("micCancel");
+      const micConfirm = document.getElementById("micConfirm");
+      const userNameElement = document.getElementById("userName");
+      const userAvatarElement = document.getElementById("userAvatar");
+      const mode1Btn = document.getElementById("mode1Btn");
+      const mode2Btn = document.getElementById("mode2Btn");
+      const modeDescription = document.getElementById("modeDescription");
+
+      // 设置菜单元素
+      const settingsButton = document.getElementById("settingsButton");
+      const settingsDropdown = document.getElementById("settingsDropdown");
+      const settingsClose = document.getElementById("settingsClose");
+      const settingsSave = document.getElementById("settingsSave");
+      const settingsReset = document.getElementById("settingsReset");
+
+      // VAD 参数滑块
+      const posThreshold = document.getElementById("posThreshold");
+      const negThreshold = document.getElementById("negThreshold");
+      const redemption = document.getElementById("redemption");
+      const preSpeech = document.getElementById("preSpeech");
+      const minSpeech = document.getElementById("minSpeech");
+      const confidenceThreshold = document.getElementById(
+        "confidenceThreshold"
+      );
+      const systemPrompt = document.getElementById("systemPrompt");
+      const promptTemplate = document.getElementById("promptTemplate");
+      const inactivitySlider = document.getElementById("inactivityTimeout");
+      const inactivityValue = document.getElementById("inactivityValue");
+
+      // ===== 语音整合提交相关变量 =====
+      let bufferedTranscripts = []; // 收集的用户语音段文本
+      let inactivitySeconds = 4; // 默认等待秒数
+      let inactivityTimer = null; // 定时器引用
+      let lastSpeechTimestamp = 0; // 最后一段语音完成的时间戳(ms)
+
+      function loadInactivitySetting() {
+        const saved = localStorage.getItem("inactivitySeconds");
+        if (saved) {
+          inactivitySeconds = parseInt(saved) || 4;
+        }
+        if (inactivitySlider) {
+          inactivitySlider.value = inactivitySeconds;
+          inactivityValue.textContent = inactivitySeconds;
+        }
+      }
+
+      function saveInactivitySetting() {
+        localStorage.setItem("inactivitySeconds", inactivitySeconds);
+      }
+
+      // 当滑块变化时实时显示
+      if (inactivitySlider) {
+        inactivitySlider.addEventListener("input", () => {
+          inactivitySeconds = parseInt(inactivitySlider.value);
+          inactivityValue.textContent = inactivitySeconds;
+        });
+      }
+
+      // 新的统一处理用户最终语音文本的函数（不立即调用 LLM）
+      function handleUserTranscript(finalText) {
+        if (!finalText) return;
+        // 显示到界面（用户气泡）
+        appendMessage(currentUser || "我", finalText, "user");
+        bufferedTranscripts.push(finalText);
+        lastSpeechTimestamp = Date.now();
+        resetInactivityTimer();
+      }
+
+      function resetInactivityTimer() {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => {
+          // 判断是否超时
+          const now = Date.now();
+            // 再次确认没有新的语音段进入
+          if (now - lastSpeechTimestamp >= inactivitySeconds * 1000) {
+            if (bufferedTranscripts.length > 0) {
+              const merged = mergeBufferedTranscripts();
+              requestLLMReply(merged);
+              bufferedTranscripts = [];
+            }
+          }
+        }, inactivitySeconds * 1000 + 50); // +50ms 缓冲
+      }
+
+      function mergeBufferedTranscripts() {
+        // 简单合并：用全角句号或空格连接，避免重复标点
+        return bufferedTranscripts
+          .map(t => t.trim())
+          .filter(t => t.length > 0)
+          .join('。')
+          .replace(/([。！？?.!])+(?=。)/g, '$1')
+          .replace(/(。){2,}/g, '。');
+      }
+
+      // VAD 参数显示值
+      const posThresholdValue = document.getElementById("posThresholdValue");
+      const negThresholdValue = document.getElementById("negThresholdValue");
+      const redemptionValue = document.getElementById("redemptionValue");
+      const preSpeechValue = document.getElementById("preSpeechValue");
+      const minSpeechValue = document.getElementById("minSpeechValue");
+      const confidenceValue = document.getElementById("confidenceValue");
+
+      // 录音模式管理
+      let recordingMode = 2; // 默认模式2: 端点检测
+      let isPressing = false; // 模式1专用：是否正在按住按钮
+      let pressRecordingStream = null; // 模式1专用：录音流
+      let pressRecorder = null; // 模式1专用：MediaRecorder
+
+      // 麦克风管理
+      let availableMicrophones = [];
+      let selectedMicrophoneId = null;
+      let currentMicrophoneId = null;
+
+      // VAD 参数配置（默认值 - v3.1 边界扩展优化版本）
+      let vadParams = {
+        positiveSpeechThreshold: 0.5, // 开始检测
+        negativeSpeechThreshold: 0.4, // 结束检测
+        redemptionFrames: 12, // 后置缓冲（10→12，保护句尾）
+        preSpeechPadFrames: 6, // 前置缓冲（5→6，保护句首）
+        minSpeechFrames: 4, // 最小触发
+      };
+
+      // LLM 提示词配置
+      let llmSystemPrompt = "";
+
+      // 提示词模板
+      const promptTemplates = {
+        dialect:
+          "你是一个专业的方言翻译助手，擅长识别和翻译各地方言。请用普通话准确翻译用户说的方言内容，并解释其含义。",
+        teacher:
+          "你是一位耐心友好的语言学习老师，帮助学生理解和学习不同的语言和方言。请用简单易懂的方式回答问题。",
+        friend:
+          "你是一个友好热情的对话伙伴，善于倾听和交流。请用自然轻松的语气与用户对话。",
+        professional:
+          "你是一个专业高效的AI助手，能够准确理解并回应用户的各类问题和需求。",
+      };
+
+      // VAD 参数预设（v3.1 优化：增大边界扩展以保护句首句尾音节）
+      const vadPresets = {
+        fast: {
+          positiveSpeechThreshold: 0.4,
+          negativeSpeechThreshold: 0.45,
+          redemptionFrames: 10, // v3.1: 后置缓冲 8→10 (+64ms 保护句尾)
+          preSpeechPadFrames: 5, // v3.1: 前置缓冲 3→5 (+64ms 保护句首)
+          minSpeechFrames: 3,
+          name: "快速响应",
+        },
+        balanced: {
+          positiveSpeechThreshold: 0.5,
+          negativeSpeechThreshold: 0.4,
+          redemptionFrames: 12, // v3.1: 后置缓冲 10→12 (+64ms 保护句尾)
+          preSpeechPadFrames: 6, // v3.1: 前置缓冲 5→6 (+32ms 保护句首)
+          minSpeechFrames: 4,
+          name: "平衡模式",
+        },
+        tolerant: {
+          positiveSpeechThreshold: 0.6,
+          negativeSpeechThreshold: 0.3,
+          redemptionFrames: 18, // v3.1: 后置缓冲 16→18 (+64ms 保护句尾)
+          preSpeechPadFrames: 8, // v3.1: 前置缓冲 7→8 (+32ms 保护句首)
+          minSpeechFrames: 5,
+          name: "容错模式",
+        },
+      };
+
+      // ========== 设置菜单功能 ==========
+
+      // 帧数转秒数（每帧约 32ms）
+      function framesToSeconds(frames) {
+        return (frames * 0.032).toFixed(2);
+      }
+
+      // 更新参数显示值
+      function updateParamDisplays() {
+        posThresholdValue.textContent = posThreshold.value;
+        negThresholdValue.textContent = negThreshold.value;
+        redemptionValue.textContent = `${framesToSeconds(redemption.value)}s (${
+          redemption.value
+        }帧)`;
+        preSpeechValue.textContent = `${framesToSeconds(preSpeech.value)}s (${
+          preSpeech.value
+        }帧)`;
+        minSpeechValue.textContent = `${framesToSeconds(minSpeech.value)}s (${
+          minSpeech.value
+        }帧)`;
+        confidenceValue.textContent = confidenceThreshold.value;
+      }
+
+      // 从滑块加载参数到 vadParams
+      function loadParamsFromUI() {
+        vadParams.positiveSpeechThreshold = parseFloat(posThreshold.value);
+        vadParams.negativeSpeechThreshold = parseFloat(negThreshold.value);
+        vadParams.redemptionFrames = parseInt(redemption.value);
+        vadParams.preSpeechPadFrames = parseInt(preSpeech.value);
+        vadParams.minSpeechFrames = parseInt(minSpeech.value);
+        vadParams.confidenceThreshold = parseFloat(confidenceThreshold.value);
+      }
+
+      // 从 vadParams 加载参数到滑块
+      function loadParamsToUI() {
+        posThreshold.value = vadParams.positiveSpeechThreshold;
+        negThreshold.value = vadParams.negativeSpeechThreshold;
+        redemption.value = vadParams.redemptionFrames;
+        preSpeech.value = vadParams.preSpeechPadFrames;
+        minSpeech.value = vadParams.minSpeechFrames;
+        confidenceThreshold.value = vadParams.confidenceThreshold;
+        updateParamDisplays();
+      }
+
+      // 应用预设
+      function applyPreset(presetName) {
+        if (vadPresets[presetName]) {
+          const preset = vadPresets[presetName];
+          vadParams = { ...preset };
+          delete vadParams.name; // 移除名称属性
+          loadParamsToUI();
+
+          // 更新预设按钮状态
+          document.querySelectorAll(".preset-btn").forEach((btn) => {
+            btn.classList.remove("active");
+            if (btn.dataset.preset === presetName) {
+              btn.classList.add("active");
+            }
+          });
+        }
+      }
+
+      // 检查是否为自定义参数
+      function checkCustomPreset() {
+        loadParamsFromUI();
+        let isPreset = false;
+
+        for (const [name, preset] of Object.entries(vadPresets)) {
+          const matches =
+            vadParams.positiveSpeechThreshold ===
+              preset.positiveSpeechThreshold &&
+            vadParams.negativeSpeechThreshold ===
+              preset.negativeSpeechThreshold &&
+            vadParams.redemptionFrames === preset.redemptionFrames &&
+            vadParams.preSpeechPadFrames === preset.preSpeechPadFrames &&
+            vadParams.minSpeechFrames === preset.minSpeechFrames;
+
+          if (matches) {
+            document.querySelectorAll(".preset-btn").forEach((btn) => {
+              btn.classList.remove("active");
+              if (btn.dataset.preset === name) {
+                btn.classList.add("active");
+              }
+            });
+            isPreset = true;
+            break;
+          }
+        }
+
+        if (!isPreset) {
+          document.querySelectorAll(".preset-btn").forEach((btn) => {
+            btn.classList.remove("active");
+            if (btn.dataset.preset === "custom") {
+              btn.classList.add("active");
+            }
+          });
+        }
+      }
+
+      // 打开/关闭设置菜单
+      settingsButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        settingsDropdown.classList.toggle("show");
+        if (settingsDropdown.classList.contains("show")) {
+          loadParamsToUI();
+        }
+      });
+
+      settingsClose.addEventListener("click", () => {
+        settingsDropdown.classList.remove("show");
+      });
+
+      // 点击外部关闭设置菜单
+      document.addEventListener("click", (e) => {
+        if (
+          !settingsDropdown.contains(e.target) &&
+          e.target !== settingsButton
+        ) {
+          settingsDropdown.classList.remove("show");
+        }
+      });
+
+      // 滑块变化事件
+      posThreshold.addEventListener("input", () => {
+        updateParamDisplays();
+        checkCustomPreset();
+      });
+
+      negThreshold.addEventListener("input", () => {
+        updateParamDisplays();
+        checkCustomPreset();
+      });
+
+      redemption.addEventListener("input", () => {
+        updateParamDisplays();
+        checkCustomPreset();
+      });
+
+      preSpeech.addEventListener("input", () => {
+        updateParamDisplays();
+        checkCustomPreset();
+      });
+
+      minSpeech.addEventListener("input", () => {
+        updateParamDisplays();
+        checkCustomPreset();
+      });
+
+      confidenceThreshold.addEventListener("input", () => {
+        updateParamDisplays();
+        checkCustomPreset();
+      });
+
+      // 预设按钮点击
+      document.querySelectorAll(".preset-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const preset = btn.dataset.preset;
+          if (preset !== "custom") {
+            applyPreset(preset);
+          }
+        });
+      });
+
+      // 保存并应用参数
+      settingsSave.addEventListener("click", async () => {
+        loadParamsFromUI();
+
+        // 保存系统提示词
+        llmSystemPrompt = systemPrompt.value.trim();
+        localStorage.setItem("llmSystemPrompt", llmSystemPrompt);
+
+        // 保存语音整合等待时间
+        inactivitySeconds = parseInt(inactivitySlider.value) || inactivitySeconds;
+        saveInactivitySetting();
+
+        // 保存到 localStorage
+        localStorage.setItem("vadParams", JSON.stringify(vadParams));
+
+        // 检查模型是否需要切换
+        const selectedModel = document.getElementById("modelSelect").value;
+        const currentModel =
+          document.getElementById("currentModelName").textContent;
+
+        if (selectedModel !== currentModel) {
+          appendMessage("系统", `正在切换到模型: ${selectedModel}...`);
+          try {
+            const response = await fetch("http://127.0.0.1:5000/switch_model", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ model: selectedModel }),
+            });
+            const data = await response.json();
+            if (data.success) {
+              document.getElementById("currentModelName").textContent =
+                selectedModel;
+              appendMessage("系统", ` 已切换到: ${selectedModel}`);
+            } else {
+              appendMessage("系统", ` 切换失败: ${data.error}`);
+            }
+          } catch (err) {
+            appendMessage("系统", ` 切换模型失败: ${err.message}`);
+          }
+        }
+
+        // 如果 VAD 正在运行，需要重启
+        if (isVadActive && recordingMode === 2) {
+          stopVadDetection();
+          setTimeout(() => {
+            startVadDetection();
+          }, 100);
+          appendMessage("系统", ` VAD 参数已更新并重启`);
+        } else {
+          appendMessage("系统", ` VAD 参数已保存，将在下次启动时生效`);
+        }
+
+        settingsDropdown.classList.remove("show");
+        console.log("VAD 参数已保存:", vadParams);
+      });
+
+      // 恢复默认参数
+      settingsReset.addEventListener("click", () => {
+        applyPreset("balanced");
+        systemPrompt.value = "";
+        llmSystemPrompt = "";
+        localStorage.removeItem("llmSystemPrompt");
+        // 重置语音整合等待时间与缓冲
+        inactivitySeconds = 4; // 默认值
+        if (inactivitySlider) inactivitySlider.value = inactivitySeconds;
+        if (inactivityValue) inactivityValue.textContent = inactivitySeconds;
+        bufferedTranscripts = [];
+        if (inactivityTimer) {
+          clearTimeout(inactivityTimer);
+          inactivityTimer = null;
+        }
+        saveInactivitySetting();
+        appendMessage("系统", "已恢复为平衡模式默认参数，提示词与语音整合等待时间已重置");
+      });
+
+      // 提示词模板选择
+      promptTemplate.addEventListener("change", () => {
+        const selected = promptTemplate.value;
+        if (selected && promptTemplates[selected]) {
+          systemPrompt.value = promptTemplates[selected];
+        }
+      });
+
+      // 页面加载时从 localStorage 读取参数
+      function loadSavedParams() {
+        const saved = localStorage.getItem("vadParams");
+        if (saved) {
+          try {
+            vadParams = JSON.parse(saved);
+            console.log("已加载保存的 VAD 参数:", vadParams);
+          } catch (e) {
+            console.error("加载参数失败，使用默认值", e);
+          }
+        }
+
+        // 加载系统提示词
+        const savedPrompt = localStorage.getItem("llmSystemPrompt");
+        if (savedPrompt) {
+          llmSystemPrompt = savedPrompt;
+          systemPrompt.value = savedPrompt;
+        }
+      }
+
+      // 初始化：加载保存的参数
+      loadSavedParams();
+  // 加载语音整合提交等待设置
+  loadInactivitySetting();
+
+      // Load current model info
+      async function loadCurrentModel() {
+        try {
+          const response = await fetch("http://127.0.0.1:5000/models");
+          if (response.ok) {
+            const data = await response.json();
+            document.getElementById("currentModelName").textContent =
+              data.current;
+            document.getElementById("modelSelect").value = data.current;
+            console.log("Current model:", data.current);
+          }
+        } catch (err) {
+          console.error("Failed to load model info:", err);
+        }
+      }
+
+      // Load model info on page load
+      loadCurrentModel();
+
+      // 从服务器获取当前登录用户信息（如果未登录则跳转到登录页）
+      let currentUser = null;
+      async function fetchCurrentUser() {
+        try {
+          const res = await fetch("/me");
+          if (res.ok) {
+            const data = await res.json();
+            currentUser = data.username;
+            userNameElement.textContent = currentUser;
+            userAvatarElement.textContent = currentUser.charAt(0);
+            // 初始化 WebSocket（依赖会话）
+            initWebSocket();
+          } else {
+            // 未登录或会话过期，跳转到登录页
+            window.location.href = "/";
+          }
+        } catch (err) {
+          console.error("获取当前用户失败", err);
+          window.location.href = "/";
+        }
+      }
+
+      // 立即获取用户信息
+      fetchCurrentUser();
+
+      // ========== 麦克风选择功能 ==========
+      // 获取所有可用的音频输入设备
+      async function getMicrophones() {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          availableMicrophones = devices.filter(
+            (device) => device.kind === "audioinput"
+          );
+          return availableMicrophones;
+        } catch (err) {
+          console.error("获取麦克风列表失败:", err);
+          appendMessage("系统", "获取麦克风列表失败");
+          return [];
+        }
+      }
+
+      // 显示麦克风选择器
+      async function showMicrophoneSelector() {
+        // 首先请求麦克风权限，以便获取设备标签
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          stream.getTracks().forEach((track) => track.stop());
+        } catch (err) {
+          console.error("请求麦克风权限失败:", err);
+          appendMessage("系统", "需要麦克风权限才能选择设备");
+          return;
+        }
+
+        const mics = await getMicrophones();
+        if (mics.length === 0) {
+          appendMessage("系统", "未找到可用的麦克风设备");
+          return;
+        }
+
+        // 清空列表
+        micList.innerHTML = "";
+
+        // 创建麦克风选项
+        mics.forEach((mic) => {
+          const item = document.createElement("div");
+          item.className = "mic-item";
+          if (mic.deviceId === currentMicrophoneId) {
+            item.classList.add("selected");
+            selectedMicrophoneId = mic.deviceId;
+          }
+          item.textContent =
+            mic.label || `麦克风 ${mic.deviceId.substring(0, 8)}`;
+          item.dataset.deviceId = mic.deviceId;
+
+          item.addEventListener("click", () => {
+            // 移除其他选中状态
+            micList
+              .querySelectorAll(".mic-item")
+              .forEach((i) => i.classList.remove("selected"));
+            // 添加选中状态
+            item.classList.add("selected");
+            selectedMicrophoneId = mic.deviceId;
+          });
+
+          micList.appendChild(item);
+        });
+
+        // 显示选择器
+        micOverlay.classList.remove("hidden");
+        micSelector.classList.remove("hidden");
+      }
+
+      // 隐藏麦克风选择器
+      function hideMicrophoneSelector() {
+        micOverlay.classList.add("hidden");
+        micSelector.classList.add("hidden");
+      }
+
+      // 应用麦克风选择
+      async function applyMicrophoneSelection() {
+        if (
+          selectedMicrophoneId &&
+          selectedMicrophoneId !== currentMicrophoneId
+        ) {
+          currentMicrophoneId = selectedMicrophoneId;
+          appendMessage("系统", "麦克风已切换");
+
+          // 如果正在进行语音检测，需要重启
+          if (isVadActive) {
+            appendMessage("系统", "正在重启语音检测...");
+            await stopVadDetection();
+            // 等待一下确保资源释放
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            await startVadDetection();
+          }
+        }
+        hideMicrophoneSelector();
+      }
+
+      // 麦克风按钮事件
+      micButton.addEventListener("click", showMicrophoneSelector);
+      micCancel.addEventListener("click", hideMicrophoneSelector);
+      micConfirm.addEventListener("click", applyMicrophoneSelection);
+      micOverlay.addEventListener("click", hideMicrophoneSelector);
+
+      // ========== VAD 语音检测系统 ==========
+      let isVadActive = false;
+      let vadStream = null;
+      let vadRecorder = null;
+      let vadMicVad = null;
+      let audioContext = null;
+      let currentStreamId = null;
+      let vadChunkSeq = 0;
+
+      // 动态加载 @ricky0123/vad-web 库
+      async function loadVadLibrary() {
+        try {
+          console.log("检查 VAD 库...");
+
+          // 检查库是否已经加载
+          if (window.vad) {
+            console.log("VAD 库已加载", window.vad);
+            return window.vad;
+          }
+
+          // 等待库加载（因为已在head中引入）
+          let attempts = 0;
+          while (!window.vad && attempts < 30) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            attempts++;
+          }
+
+          if (window.vad) {
+            console.log("VAD 库加载成功", window.vad);
+            return window.vad;
+          } else {
+            console.warn("VAD 库未找到，将使用内置检测");
+            return null;
+          }
+        } catch (error) {
+          console.error("VAD 库检查失败:", error);
+          return null;
+        }
+      }
+
+      // 开启 VAD 语音检测
+      async function startVadDetection() {
+        if (isVadActive) return;
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          appendMessage("系统", "WebSocket 未连接，无法开始语音检测");
+          return;
+        }
+
+        try {
+          // 获取麦克风权限，使用选定的设备
+          const constraints = {
+            audio: {
+              channelCount: 1,
+              sampleRate: 16000,
+              echoCancellation: true,
+              noiseSuppression: true,
+            },
+          };
+
+          // 如果指定了麦克风设备ID，则使用指定设备
+          if (currentMicrophoneId) {
+            constraints.audio.deviceId = { exact: currentMicrophoneId };
+          }
+
+          vadStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+          // 尝试加载 VAD 库
+          appendMessage("系统", "正在初始化 Silero VAD...");
+          const vad = await loadVadLibrary();
+
+          if (vad && vad.MicVAD) {
+            console.log("VAD 库加载成功，开始初始化 MicVAD");
+            // 使用 Silero VAD
+            try {
+              vadMicVad = await vad.MicVAD.new({
+                stream: vadStream,
+                onSpeechStart: () => {
+                  console.log("检测到语音开始");
+
+                  // 如果有正在进行的录音，先结束它
+                  if (currentStreamId) {
+                    console.log("⚠️ 检测到新语音，立即结束上一语音片段");
+
+                    // 停止当前录音
+                    if (vadRecorder && vadRecorder.state !== "inactive") {
+                      vadRecorder.stop();
+                      vadRecorder = null;
+                    }
+
+                    // 发送上一个流的结束消息
+                    const prevStreamId = currentStreamId;
+                    const prevEndMsg = {
+                      type: "audio-end",
+                      sender: currentUser,
+                      streamId: prevStreamId,
+                      interrupted: true, // 标记为被中断
+                    };
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify(prevEndMsg));
+                      console.log(`已发送中断结束信号: ${prevStreamId}`);
+                    }
+                  }
+
+                  // 开始新的语音流
+                  currentStreamId = generateStreamId();
+                  vadChunkSeq = 0;
+
+                  // 发送音频流开始消息
+                  const startMsg = {
+                    type: "audio-start",
+                    sender: currentUser,
+                    mimeType: "audio/webm;codecs=opus",
+                    streamId: currentStreamId,
+                  };
+                  if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify(startMsg));
+                    console.log(`开始新语音流: ${currentStreamId}`);
+                  }
+
+                  // 开始录音
+                  startVadRecording();
+                },
+                onSpeechEnd: (audio) => {
+                  console.log("检测到语音结束");
+
+                  // 停止录音
+                  stopVadRecording();
+
+                  // 发送音频流结束消息
+                  if (currentStreamId) {
+                    const endMsg = {
+                      type: "audio-end",
+                      sender: currentUser,
+                      streamId: currentStreamId,
+                    };
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify(endMsg));
+                      console.log(`语音结束: ${currentStreamId}`);
+                    }
+                    currentStreamId = null;
+                  }
+                },
+                onVADMisfire: () => {
+                  console.log("VAD 误触发");
+                },
+                // 使用可配置的 VAD 参数
+                positiveSpeechThreshold: vadParams.positiveSpeechThreshold,
+                negativeSpeechThreshold: vadParams.negativeSpeechThreshold,
+                redemptionFrames: vadParams.redemptionFrames,
+                preSpeechPadFrames: vadParams.preSpeechPadFrames,
+                minSpeechFrames: vadParams.minSpeechFrames,
+                submitUserSpeechOnPause: true, // 在停顿时提交语音（适合中文逐句识别）
+              });
+
+              vadMicVad.start();
+              isVadActive = true;
+              voiceButton.classList.add("active");
+              voiceButton.textContent = "关闭语音检测";
+              appendMessage("系统", "Silero VAD 语音检测已启动");
+              console.log("当前 VAD 参数:", vadParams);
+            } catch (vadError) {
+              console.error("MicVAD 初始化失败:", vadError);
+              appendMessage("系统", "VAD 初始化失败，切换到基础检测");
+              await startBasicVadDetection();
+            }
+          } else {
+            console.log("VAD 库不可用，使用基础检测");
+            // 备用方案：使用基础音量检测
+            await startBasicVadDetection();
+          }
+        } catch (err) {
+          console.error("启动语音检测失败:", err);
+          appendMessage("系统", "启动语音检测失败: " + err.message);
+          if (vadStream) {
+            vadStream.getTracks().forEach((t) => t.stop());
+            vadStream = null;
+          }
+        }
+      }
+
+      // 基础音量检测（备用方案）
+      async function startBasicVadDetection() {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(vadStream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+
+        const bufferLength = analyser.fftSize;
+        const dataArray = new Uint8Array(bufferLength);
+
+        let isSpeaking = false;
+        const VOLUME_THRESHOLD = 20; // 降低音量阈值（从30降到20），更容易触发中文轻声和低音调
+        const SPEECH_START_FRAMES = 2; // 减少开始帧数（从3降到2），更快响应中文起音
+        const SPEECH_END_FRAMES = 25; // 大幅增加结束帧数（从10增到25），容忍中文词间停顿
+        let aboveThresholdCount = 0;
+        let belowThresholdCount = 0;
+
+        function checkVolume() {
+          if (!isVadActive) return;
+
+          analyser.getByteTimeDomainData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            const value = Math.abs(dataArray[i] - 128);
+            sum += value;
+          }
+          const average = sum / bufferLength;
+
+          if (average > VOLUME_THRESHOLD) {
+            aboveThresholdCount++;
+            belowThresholdCount = 0;
+
+            if (!isSpeaking && aboveThresholdCount >= SPEECH_START_FRAMES) {
+              isSpeaking = true;
+              console.log("检测到语音开始（基础检测）");
+              currentStreamId = generateStreamId();
+              vadChunkSeq = 0;
+
+              const startMsg = {
+                type: "audio-start",
+                sender: currentUser,
+                mimeType: "audio/webm;codecs=opus",
+                streamId: currentStreamId,
+              };
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(startMsg));
+              }
+              startVadRecording();
+            }
+          } else {
+            belowThresholdCount++;
+            aboveThresholdCount = 0;
+
+            if (isSpeaking && belowThresholdCount >= SPEECH_END_FRAMES) {
+              isSpeaking = false;
+              console.log("检测到语音结束（基础检测）");
+              stopVadRecording();
+
+              if (currentStreamId) {
+                const endMsg = {
+                  type: "audio-end",
+                  sender: currentUser,
+                  streamId: currentStreamId,
+                };
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify(endMsg));
+                }
+                currentStreamId = null;
+              }
+            }
+          }
+
+          requestAnimationFrame(checkVolume);
+        }
+
+        checkVolume();
+        isVadActive = true;
+        voiceButton.classList.add("active");
+        voiceButton.textContent = "关闭语音检测";
+        appendMessage("系统", "基础语音检测已启动（基于音量）");
+      }
+
+      // 开始录音（在检测到语音时）
+      function startVadRecording() {
+        if (!vadStream) return;
+
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+
+        vadRecorder = new MediaRecorder(vadStream, { mimeType });
+
+        vadRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0 && currentStreamId) {
+            try {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                const chunkMeta = {
+                  type: "audio-chunk",
+                  sender: currentUser,
+                  streamId: currentStreamId,
+                  seq: vadChunkSeq++,
+                  mimeType,
+                  timestamp: Date.now(),
+                };
+                ws.send(JSON.stringify(chunkMeta));
+                ws.send(e.data);
+              }
+            } catch (err) {
+              console.error("发送音频分片失败:", err);
+            }
+          }
+        };
+
+        vadRecorder.start(250); // 250ms 切片
+      }
+
+      // 停止录音
+      function stopVadRecording() {
+        if (vadRecorder && vadRecorder.state !== "inactive") {
+          vadRecorder.stop();
+          vadRecorder = null;
+        }
+      }
+
+      // 关闭 VAD 语音检测
+      function stopVadDetection() {
+        if (!isVadActive) return;
+
+        isVadActive = false;
+        voiceButton.classList.remove("active");
+        voiceButton.textContent = "开启语音检测";
+
+        // 停止 Silero VAD
+        if (vadMicVad) {
+          vadMicVad.pause();
+          vadMicVad.destroy();
+          vadMicVad = null;
+        }
+
+        // 停止录音
+        stopVadRecording();
+
+        // 停止音频上下文
+        if (audioContext) {
+          audioContext.close();
+          audioContext = null;
+        }
+
+        // 释放麦克风
+        if (vadStream) {
+          vadStream.getTracks().forEach((t) => t.stop());
+          vadStream = null;
+        }
+
+        appendMessage("系统", "语音检测已关闭");
+      }
+
+      // ========== 模式切换功能 ==========
+      function switchToMode(mode) {
+        // 停止当前任何录音
+        if (recordingMode === 1 && isPressing) {
+          stopPressToTalkRecording();
+        } else if (recordingMode === 2 && isVadActive) {
+          stopVadDetection();
+        }
+
+        recordingMode = mode;
+
+        // 更新按钮状态
+        if (mode === 1) {
+          mode1Btn.classList.add("active");
+          mode2Btn.classList.remove("active");
+          modeDescription.textContent = "按住按钮说话，松开结束";
+          voiceButton.textContent = "按住录音";
+          voiceButton.classList.add("press-to-talk");
+          voiceButton.classList.remove("active");
+          voiceButton.classList.remove("pressing");
+        } else {
+          mode2Btn.classList.add("active");
+          mode1Btn.classList.remove("active");
+          modeDescription.textContent = "自动检测语音端点";
+          voiceButton.textContent = "开启语音检测";
+          voiceButton.classList.remove("press-to-talk");
+          voiceButton.classList.remove("active");
+          voiceButton.classList.remove("pressing");
+        }
+
+        appendMessage(
+          "系统",
+          `已切换到模式${mode}: ${modeDescription.textContent}`
+        );
+      }
+
+      mode1Btn.addEventListener("click", () => switchToMode(1));
+      mode2Btn.addEventListener("click", () => switchToMode(2));
+
+      // ========== 模式1: 按住录音功能 ==========
+      async function startPressToTalkRecording() {
+        if (isPressing) return; // 防止重复启动
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          appendMessage("系统", "WebSocket 未连接，无法开始录音");
+          return;
+        }
+
+        try {
+          isPressing = true;
+          voiceButton.classList.add("pressing");
+
+          // 获取麦克风权限
+          const constraints = {
+            audio: currentMicrophoneId
+              ? { deviceId: { exact: currentMicrophoneId } }
+              : true,
+          };
+          pressRecordingStream = await navigator.mediaDevices.getUserMedia(
+            constraints
+          );
+
+          // 创建 MediaRecorder
+          pressRecorder = new MediaRecorder(pressRecordingStream, {
+            mimeType: "audio/webm;codecs=opus",
+          });
+
+          // 生成流ID
+          currentStreamId = Date.now().toString();
+          vadChunkSeq = 0;
+
+          pressRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
+              vadChunkSeq++;
+              const metadata = {
+                type: "audio_stream",
+                sender: currentUser || "未知",
+                streamId: currentStreamId,
+                chunkSeq: vadChunkSeq,
+                timestamp: Date.now(),
+                mimeType: "audio/webm",
+              };
+
+              // 发送元数据
+              ws.send(JSON.stringify(metadata));
+              // 发送音频数据
+              ws.send(e.data);
+
+              console.log(
+                `[模式1] 发送音频块 ${vadChunkSeq}, 大小: ${e.data.size} 字节`
+              );
+            }
+          };
+
+          pressRecorder.onstop = () => {
+            console.log("[模式1] MediaRecorder 已停止");
+          };
+
+          pressRecorder.onerror = (e) => {
+            console.error("[模式1] 录音错误:", e.error);
+            appendMessage("系统", "录音错误: " + e.error);
+            stopPressToTalkRecording();
+          };
+
+          pressRecorder.start(250); // 每250ms一个chunk
+          console.log("[模式1] 开始按住录音");
+          appendMessage("系统", "按住录音中...");
+        } catch (error) {
+          console.error("[模式1] 录音启动失败:", error);
+          appendMessage("系统", "无法访问麦克风: " + error.message);
+          isPressing = false;
+          voiceButton.classList.remove("pressing");
+        }
+      }
+
+      function stopPressToTalkRecording() {
+        if (!isPressing) return;
+
+        isPressing = false;
+        voiceButton.classList.remove("pressing");
+
+        // 停止录音（确保最后一块数据被发送）
+        if (pressRecorder && pressRecorder.state !== "inactive") {
+          // 先停止录音，这会触发最后的 ondataavailable 事件
+          pressRecorder.stop();
+
+          // 延迟清理，确保最后的数据发送完成
+          setTimeout(() => {
+            pressRecorder = null;
+
+            // 释放流
+            if (pressRecordingStream) {
+              pressRecordingStream.getTracks().forEach((t) => t.stop());
+              pressRecordingStream = null;
+            }
+
+            // 发送流结束信号
+            if (ws && ws.readyState === WebSocket.OPEN && currentStreamId) {
+              ws.send(
+                JSON.stringify({
+                  type: "audio_stream_end",
+                  streamId: currentStreamId,
+                  sender: currentUser || "未知",
+                })
+              );
+              console.log("[模式1] 已发送流结束信号");
+            }
+
+            currentStreamId = null;
+          }, 100);
+        } else {
+          // 如果录音器已经停止，直接清理
+          if (pressRecordingStream) {
+            pressRecordingStream.getTracks().forEach((t) => t.stop());
+            pressRecordingStream = null;
+          }
+        }
+
+        console.log("[模式1] 结束按住录音");
+      }
+
+      // 语音检测按钮事件 - 根据模式执行不同逻辑
+      voiceButton.addEventListener("click", () => {
+        if (recordingMode === 2) {
+          // 模式2: 端点检测 - 点击切换
+          if (isVadActive) {
+            stopVadDetection();
+          } else {
+            startVadDetection();
+          }
+        }
+        // 模式1: 按住录音 - 不响应点击事件
+      });
+
+      // 模式1: 按住录音事件 (鼠标)
+      voiceButton.addEventListener("mousedown", (e) => {
+        if (recordingMode === 1) {
+          e.preventDefault();
+          startPressToTalkRecording();
+        }
+      });
+
+      voiceButton.addEventListener("mouseup", (e) => {
+        if (recordingMode === 1) {
+          e.preventDefault();
+          stopPressToTalkRecording();
+        }
+      });
+
+      voiceButton.addEventListener("mouseleave", (e) => {
+        if (recordingMode === 1 && isPressing) {
+          stopPressToTalkRecording();
+        }
+      });
+
+      // 模式1: 按住录音事件 (触摸屏)
+      voiceButton.addEventListener("touchstart", (e) => {
+        if (recordingMode === 1) {
+          e.preventDefault();
+          startPressToTalkRecording();
+        }
+      });
+
+      voiceButton.addEventListener("touchend", (e) => {
+        if (recordingMode === 1) {
+          e.preventDefault();
+          stopPressToTalkRecording();
+        }
+      });
+
+      voiceButton.addEventListener("touchcancel", (e) => {
+        if (recordingMode === 1 && isPressing) {
+          stopPressToTalkRecording();
+        }
+      });
+
+      // ========== 页面卸载时清理资源 ==========
+      window.addEventListener("beforeunload", () => {
+        if (isPressing) {
+          stopPressToTalkRecording();
+        }
+        if (isVadActive) {
+          stopVadDetection();
+        }
+      });
+
+      // 原有的端点检测按钮事件处理已在上面重写
+
+      // ========== 旧的语音识别代码（已禁用）==========
+      // 检查浏览器是否支持语音识别
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+      let recognition = null;
+
+      // 注释掉旧的语音识别功能
+      /*
+      if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = "zh-CN"; // 设置语言为中文
+        recognition.continuous = false; // 单次会话
+        recognition.interimResults = true; // 开启中间结果以实现流式文本
+
+        // 临时显示元素（用于中间结果）
+        let interimElement = null;
+
+        recognition.onresult = (event) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            const transcript = result[0].transcript.trim();
+            const isFinal = result.isFinal;
+
+            // 在页面上展示中间/最终结果
+            if (!isFinal) {
+              if (!interimElement) {
+                interimElement = document.createElement("div");
+                interimElement.className = "interim-message";
+                messagesDiv.appendChild(interimElement);
+              }
+              interimElement.innerHTML = `<strong>${
+                currentUser || "您"
+              } (识别中):</strong> ${transcript}`;
+              messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            } else {
+              // 最终结果：使用语音整合逻辑缓冲，不立即发送给 LLM
+              if (interimElement) {
+                messagesDiv.removeChild(interimElement);
+                interimElement = null;
+              }
+              messageInput.value = transcript;
+              handleUserTranscript(transcript);
+            }
+
+            // 通过 WebSocket 实时发送识别文本（streaming）
+            const payload = {
+              sender: currentUser || "未知",
+              text: transcript,
+              type: isFinal ? "final" : "interim",
+            };
+            try {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(payload));
+              }
+            } catch (e) {
+              console.error("发送识别结果失败", e);
+            }
+          }
+        };
+
+        recognition.onerror = (event) => {
+          console.error("语音识别错误:", event.error);
+          voiceButton.classList.remove("recording");
+          appendMessage("系统", "语音识别出错，请重试");
+        };
+
+        recognition.onend = () => {
+          voiceButton.classList.remove("recording");
+        };
+
+        voiceButton.addEventListener("click", () => {
+          if (voiceButton.classList.contains("recording")) {
+            recognition.stop();
+          } else {
+            // 清理输入与可能存在的临时元素
+            messageInput.value = "";
+            // 如果有残留的 interim element，移除
+            const leftover = messagesDiv.querySelector(".interim-message");
+            if (leftover) leftover.remove();
+            recognition.start();
+            voiceButton.classList.add("recording");
+          }
+        });
+      } else {
+        voiceButton.style.display = "none";
+        appendMessage("系统", "您的浏览器不支持语音识别功能");
+      }
+      */
+
+      // WebSocket 延后初始化（在获取到当前用户后建立连接）
+      let ws = null;
+      // 接收端缓冲：按 sender -> streamId 聚合分片
+      const incomingStreams = {}; // { sender: { streamId: { mimeType, parts: { seq: Blob }, seqs: [] } } }
+      // 每个 sender 的 pending 控制队列（用于将随后到达的二进制分片与前面的 control 匹配）
+      const pendingControls = {}; // { sender: [ { streamId, seq } ] }
+
+      // 生成随机 streamId（每次开始新的音频会话）
+      function generateStreamId() {
+        return (
+          Math.random().toString(36).substr(2, 9) +
+          "-" +
+          Date.now().toString(36)
+        );
+      }
+
+      // 方便向 pendingControls 添加项（本端记录，可选）
+      function pushPendingControl(sender, streamId, seq) {
+        pendingControls[sender] = pendingControls[sender] || [];
+        pendingControls[sender].push({ streamId, seq });
+      }
+      function initWebSocket() {
+        if (ws && ws.readyState === WebSocket.OPEN) return;
+        ws = new WebSocket(
+          (location.protocol === "https:" ? "wss://" : "ws://") + location.host
+        );
+
+        ws.onopen = () => {
+          appendMessage("系统", "已连接到服务器");
+        };
+
+        ws.onmessage = async (event) => {
+          try {
+            if (typeof event.data === "string") {
+              const message = JSON.parse(event.data);
+              // audio-start: 创建流结构
+              if (message.type === "audio-start") {
+                incomingStreams[message.sender] =
+                  incomingStreams[message.sender] || {};
+                incomingStreams[message.sender][message.streamId] = {
+                  mimeType: message.mimeType || "audio/webm",
+                  parts: {},
+                  seqs: [],
+                };
+                pendingControls[message.sender] =
+                  pendingControls[message.sender] || [];
+                appendMessage("系统", `${message.sender} 开始语音流`);
+                return;
+              }
+
+              // audio-end: 合并并播放该流
+              if (message.type === "audio-end") {
+                const s =
+                  incomingStreams[message.sender] &&
+                  incomingStreams[message.sender][message.streamId];
+                if (s) {
+                  const seqs = s.seqs.slice().sort((a, b) => a - b);
+                  const parts = seqs.map((q) => s.parts[q]).filter(Boolean);
+                  if (parts.length) {
+                    const blob = new Blob(parts, {
+                      type: s.mimeType || "audio/webm",
+                    });
+                    const url = URL.createObjectURL(blob);
+                    const audio = new Audio(url);
+                    audio
+                      .play()
+                      .catch((err) => console.error("播放音频失败", err));
+                  }
+                  delete incomingStreams[message.sender][message.streamId];
+                }
+                appendMessage("系统", `${message.sender} 结束语音流`);
+                return;
+              }
+
+              // audio-chunk: 记录控制元信息，等待随后二进制匹配
+              if (message.type === "audio-chunk") {
+                pendingControls[message.sender] =
+                  pendingControls[message.sender] || [];
+                incomingStreams[message.sender] =
+                  incomingStreams[message.sender] || {};
+                incomingStreams[message.sender][message.streamId] =
+                  incomingStreams[message.sender][message.streamId] || {
+                    mimeType: message.mimeType || "audio/webm",
+                    parts: {},
+                    seqs: [],
+                  };
+                if (
+                  !incomingStreams[message.sender][
+                    message.streamId
+                  ].seqs.includes(message.seq)
+                ) {
+                  incomingStreams[message.sender][message.streamId].seqs.push(
+                    message.seq
+                  );
+                }
+                pendingControls[message.sender].push({
+                  streamId: message.streamId,
+                  seq: message.seq,
+                });
+                return;
+              }
+
+              // STT 识别结果（来自服务端）
+              if (message.type === "stt-result") {
+                const r = message.result || {};
+                const who = message.sender || "系统";
+                if (r.type === "interim") {
+                  const interimEl = document.createElement("div");
+                  interimEl.className = "interim-message";
+                  interimEl.innerHTML = `<strong>${who} (识别中):</strong> ${r.text}`;
+                  messagesDiv.appendChild(interimEl);
+                  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } else if (r.type === "final") {
+                  // 使用缓冲逻辑处理最终结果
+                  handleUserTranscript(r.text);
+                }
+                return;
+              }
+
+              // 普通文本消息
+              appendMessage(message.sender, message.text);
+            } else {
+              // 二进制数据（Blob）
+              const arrayBuffer = await event.data.arrayBuffer();
+              const senders = Object.keys(pendingControls).filter(
+                (s) => pendingControls[s] && pendingControls[s].length > 0
+              );
+              if (senders.length === 0) {
+                console.warn("收到二进制音频但没有 pending 控制项，已丢弃");
+                return;
+              }
+              const sender = senders[0];
+              const pending = pendingControls[sender].shift();
+              if (!pending) {
+                console.warn("pending 控制项为空，丢弃分片");
+                return;
+              }
+              const { streamId, seq } = pending;
+              incomingStreams[sender] = incomingStreams[sender] || {};
+              incomingStreams[sender][streamId] = incomingStreams[sender][
+                streamId
+              ] || { mimeType: "audio/webm", parts: {}, seqs: [] };
+              incomingStreams[sender][streamId].parts[seq] = new Blob([
+                arrayBuffer,
+              ]);
+            }
+          } catch (e) {
+            console.error("解析消息失败", e);
+          }
+        };
+
+        ws.onclose = () => {
+          appendMessage("系统", "与服务器断开连接");
+        };
+      }
+
+      // ========== 音频流（MediaRecorder）采集并通过 WebSocket 发送 ==========
+      const audioButton = document.getElementById("audioButton");
+      let mediaRecorder = null;
+      let localStream = null;
+      let isStreamingAudio = false;
+
+      async function startAudioStream() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          appendMessage("系统", "WebSocket 未连接，无法开始音频流");
+          return;
+        }
+
+        try {
+          const constraints = { audio: true };
+
+          // 如果指定了麦克风设备ID，则使用指定设备
+          if (currentMicrophoneId) {
+            constraints.audio = { deviceId: { exact: currentMicrophoneId } };
+          }
+
+          localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+          console.error("获取麦克风失败", err);
+          appendMessage("系统", "获取麦克风失败，请检查权限");
+          return;
+        }
+
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+        mediaRecorder = new MediaRecorder(localStream, { mimeType });
+
+        // 为本次音频会话生成 streamId 与 seq
+        const streamId = generateStreamId();
+        let seq = 0;
+
+        mediaRecorder.addEventListener("start", () => {
+          isStreamingAudio = true;
+          audioButton.textContent = "停止音频流";
+          const startMsg = {
+            type: "audio-start",
+            sender: currentUser,
+            mimeType,
+            streamId,
+          };
+          if (ws && ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify(startMsg));
+        });
+
+        mediaRecorder.addEventListener("dataavailable", (e) => {
+          if (e.data && e.data.size > 0) {
+            try {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                // 先发送一条包含 streamId/seq 的控制消息，再发送二进制分片
+                const chunkMeta = {
+                  type: "audio-chunk",
+                  sender: currentUser,
+                  streamId,
+                  seq: seq++,
+                  mimeType,
+                  timestamp: Date.now(),
+                };
+                // 记录本端 pending（可用于本地回放/调试）
+                pushPendingControl(currentUser, streamId, chunkMeta.seq);
+                ws.send(JSON.stringify(chunkMeta));
+                ws.send(e.data);
+              }
+            } catch (err) {
+              console.error("发送音频分片失败", err);
+            }
+          }
+        });
+
+        mediaRecorder.addEventListener("stop", () => {
+          isStreamingAudio = false;
+          audioButton.textContent = "流式音频";
+          const endMsg = { type: "audio-end", sender: currentUser, streamId };
+          if (ws && ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify(endMsg));
+          if (localStream) {
+            localStream.getTracks().forEach((t) => t.stop());
+            localStream = null;
+          }
+        });
+
+        // 以 250ms 为单位切片
+        mediaRecorder.start(250);
+      }
+
+      function stopAudioStream() {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+        }
+      }
+
+      audioButton.addEventListener("click", () => {
+        if (isStreamingAudio) stopAudioStream();
+        else startAudioStream();
+      });
+
+      // 发送消息
+      messageForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const text = messageInput.value;
+        if (text.trim()) {
+          const message = {
+            sender: currentUser,
+            text: text,
+          };
+          ws.send(JSON.stringify(message));
+          messageInput.value = "";
+        }
+      });
+
+      // 在消息区域添加新消息
+      function appendMessage(sender, text, type = "normal") {
+        const msgDiv = document.createElement("div");
+        if (type === "user") {
+          msgDiv.className = "user-message";
+          msgDiv.innerHTML = `<strong style=\"color: #fff;\">我:</strong> ${text}`;
+        } else if (type === "ai") {
+          msgDiv.className = "ai-message";
+          msgDiv.innerHTML = `<strong style=\"color: #222831;\">智能体:</strong> <span id='ai-stream-content'></span>`;
+          messagesDiv.appendChild(msgDiv);
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+          // 伪流式输出 Markdown 内容
+          let idx = 0;
+          const raw = text;
+          const step = 8; // 每次输出字符数，可调
+          const aiSpan = msgDiv.querySelector('#ai-stream-content');
+          function streamStep() {
+            if (idx < raw.length) {
+              // 只渲染到当前位置
+            const partialHtml = window.marked.parse(raw.slice(0, idx + step));
+            aiSpan.innerHTML = DOMPurify.sanitize(partialHtml);
+              messagesDiv.scrollTop = messagesDiv.scrollHeight;
+              idx += step;
+              setTimeout(streamStep, 40); // 间隔可调
+            } else {
+              aiSpan.innerHTML = DOMPurify.sanitize(window.marked.parse(raw));
+              messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+          }
+          streamStep();
+          return;
+        } else {
+          msgDiv.innerHTML = `<strong>${sender}:</strong> ${text}`;
+        }
+        messagesDiv.appendChild(msgDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+
+      // 调用语言大模型接口
+      function requestLLMReply(userText) {
+        // 显示"正在思考"提示
+        const thinkingDiv = document.createElement("div");
+        thinkingDiv.className = "ai-message";
+        thinkingDiv.id = "thinking-message";
+        thinkingDiv.innerHTML = `<strong style="color: #222831;">助手:</strong> 正在思考...`;
+        messagesDiv.appendChild(thinkingDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        // 构建请求体，包含系统提示词
+        const requestBody = {
+          text: userText,
+          user: currentUser || "default",
+        };
+
+        // 如果设置了系统提示词，添加到请求中
+        if (llmSystemPrompt) {
+          requestBody.systemPrompt = llmSystemPrompt;
+          console.log("[LLM] 使用系统提示词片段:", llmSystemPrompt.slice(0, 80));
+        }
+
+        // 调用后端 LLM API
+        fetch("http://localhost:5001/llm", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            // 移除"正在思考"提示
+            const thinking = document.getElementById("thinking-message");
+            if (thinking) {
+              thinking.remove();
+            }
+
+            if (data.success) {
+              appendMessage("助手", data.reply, "ai");
+            } else {
+              appendMessage(
+                "系统",
+                "LLM调用失败: " + (data.error || "未知错误")
+              );
+            }
+          })
+          .catch((err) => {
+            console.error("LLM调用失败", err);
+            // 移除"正在思考"提示
+            const thinking = document.getElementById("thinking-message");
+            if (thinking) {
+              thinking.remove();
+            }
+            appendMessage("系统", "LLM调用失败: " + err.message);
+          });
+      }
+
+      // 在语音识别最终结果处调用 appendMessage 并预留 LLM 回复
+      // recognition.onresult = ...
+      // ...existing code...
+      if (isFinal) {
+        appendMessage(currentUser || "我", transcript, "user");
+        requestLLMReply(transcript); // 预留调用 LLM 回复
+      }
+      // ...existing code...
+    </script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+flask==3.0.0
+flask-cors==4.0.0
+requests==2.31.0
+# 可选：加载 .env 文件
+python-dotenv==1.0.0
+# 语音 / 模型（若使用 paraformer 服务）
+funasr==0.9.3
+torch>=2.0.0
+torchaudio>=2.0.0
+# WebSocket / 其他（如果后端使用 websockets）
+websockets==11.0.3

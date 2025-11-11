@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI方言识别助手</title>
+    <style>
+      :root {
+        --color-darkest: #2b0809;
+        --color-dark: #691417;
+        --color-primary: #bf242a;
+        --color-light: #e2676b;
+        --color-lightest: #f2bdbf;
+      }
+
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0;
+        background-color: var(--color-lightest);
+        color: var(--color-darkest);
+        min-height: 100vh;
+      }
+
+      html {
+        background-color: var(--color-lightest);
+      }
+
+      .header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: white;
+        box-shadow: 0 4px 12px rgba(191, 36, 42, 0.1);
+        z-index: 1000;
+        border-bottom: 1px solid rgba(191, 36, 42, 0.1);
+      }
+
+      .header-content {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .user-avatar {
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        background-color: var(--color-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 1.2em;
+        box-shadow: 0 2px 8px rgba(191, 36, 42, 0.3);
+        border: 2px solid var(--color-light);
+        transition: transform 0.2s ease;
+      }
+
+      .user-avatar:hover {
+        transform: scale(1.05);
+      }
+
+      .user-info {
+        flex: 1;
+      }
+
+      .user-name {
+        font-weight: bold;
+        margin: 0;
+        color: var(--color-darkest);
+        font-size: 1.1em;
+      }
+
+      .user-status {
+        color: var(--color-dark);
+        font-size: 0.9em;
+        margin: 4px 0 0 0;
+      }
+
+      .main-content {
+        margin-top: 90px;
+        padding: 20px;
+        background-color: white;
+        border-radius: 20px;
+        box-shadow: 0 4px 16px rgba(191, 36, 42, 0.1);
+        border: 1px solid rgba(191, 36, 42, 0.1);
+      }
+
+      h1 {
+        color: var(--color-lightest);
+        font-size: 1.8em;
+        margin-bottom: 25px;
+        text-align: center;
+      }
+
+      #messages {
+        height: 400px;
+        border: 1px solid rgba(191, 36, 42, 0.1);
+        margin-bottom: 25px;
+        padding: 15px;
+        overflow-y: auto;
+        border-radius: 15px;
+        background-color: rgba(242, 189, 191, 0.1);
+      }
+
+      #messages div {
+        margin: 8px 0;
+        padding: 10px 15px;
+        border-radius: 12px;
+        background-color: white;
+        box-shadow: 0 2px 6px rgba(191, 36, 42, 0.1);
+        transition: transform 0.2s ease;
+        color: var(--color-darkest);
+        border: 1px solid rgba(191, 36, 42, 0.1);
+      }
+
+      #messages div:hover {
+        transform: translateX(5px);
+      }
+
+      #messages div strong {
+        color: var(--color-light);
+      }
+      .interim-message {
+        margin: 8px 0;
+        padding: 10px 15px;
+        border-radius: 12px;
+        background-color: rgba(226, 103, 107, 0.06);
+        color: var(--color-darkest);
+        font-style: italic;
+        border: 1px dashed rgba(191, 36, 42, 0.08);
+      }
+
+      #messageForm {
+        display: flex;
+        gap: 12px;
+        padding: 15px;
+        border-radius: 15px;
+        background-color: rgba(242, 189, 191, 0.1);
+        border: 1px solid rgba(191, 36, 42, 0.1);
+      }
+
+      #messageInput {
+        flex: 1;
+        padding: 12px 20px;
+        border: 1px solid rgba(191, 36, 42, 0.1);
+        border-radius: 12px;
+        font-size: 1em;
+        background-color: white;
+        color: var(--color-darkest);
+        box-shadow: inset 0 2px 4px rgba(191, 36, 42, 0.05);
+        transition: all 0.2s ease;
+      }
+
+      #messageInput:focus {
+        outline: none;
+        box-shadow: inset 0 2px 4px rgba(43, 8, 9, 0.2),
+          0 0 0 3px var(--color-primary);
+      }
+
+      #messageInput::placeholder {
+        color: var(--color-light);
+      }
+      button {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 12px;
+        font-weight: 600;
+        color: white;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.95em;
+        box-shadow: 0 2px 6px rgba(10, 38, 57, 0.15);
+      }
+
+      button[type="submit"] {
+        background-color: var(--color-primary);
+        border: 1px solid rgba(139, 196, 234, 0.2);
+      }
+
+      button[type="submit"]:hover {
+        background-color: var(--color-dark);
+        transform: translateY(-2px);
+        border-color: var(--color-light);
+      }
+
+      #voiceButton {
+        background-color: var(--color-light);
+      }
+
+      #voiceButton:hover {
+        background-color: var(--color-primary);
+        transform: translateY(-2px);
+      }
+
+      #voiceButton.recording {
+        background-color: var(--color-darkest);
+        animation: pulse 1.5s infinite;
+        box-shadow: 0 0 0 0 rgba(191, 36, 42, 0.7);
+      }
+
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(191, 36, 42, 0.7);
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(191, 36, 42, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(191, 36, 42, 0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="header-content">
+        <div class="user-avatar" id="userAvatar">访</div>
+        <div class="user-info">
+          <p class="user-name" id="userName">访客</p>
+          <p class="user-status">在线</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <h1 style="color:#222;">AI方言识别助手</h1>
+      <div id="messages"></div>
+      <form id="messageForm">
+        <input
+          type="text"
+          id="messageInput"
+          placeholder="请输入或说出您要识别的方言..."
+          required
+        />
+        <button type="button" id="voiceButton">语音输入(识别)</button>
+        <button type="button" id="audioButton">流式音频</button>
+        <button type="submit">发送</button>
+      </form>
+    </div>
+
+    <script>
+      const messagesDiv = document.getElementById("messages");
+      const messageForm = document.getElementById("messageForm");
+      const messageInput = document.getElementById("messageInput");
+      const voiceButton = document.getElementById("voiceButton");
+      const userNameElement = document.getElementById("userName");
+      const userAvatarElement = document.getElementById("userAvatar");
+
+      // 从服务器获取当前登录用户信息（如果未登录则跳转到登录页）
+      let currentUser = null;
+      async function fetchCurrentUser() {
+        try {
+          const res = await fetch("/me");
+          if (res.ok) {
+            const data = await res.json();
+            currentUser = data.username;
+            userNameElement.textContent = currentUser;
+            userAvatarElement.textContent = currentUser.charAt(0);
+            // 初始化 WebSocket（依赖会话）
+            initWebSocket();
+          } else {
+            // 未登录或会话过期，跳转到登录页
+            window.location.href = "/";
+          }
+        } catch (err) {
+          console.error("获取当前用户失败", err);
+          window.location.href = "/";
+        }
+      }
+
+      // 立即获取用户信息
+      fetchCurrentUser();
+
+      // 检查浏览器是否支持语音识别
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+      let recognition = null;
+
+      if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = "zh-CN"; // 设置语言为中文
+        recognition.continuous = false; // 单次会话
+        recognition.interimResults = true; // 开启中间结果以实现流式文本
+
+        // 临时显示元素（用于中间结果）
+        let interimElement = null;
+
+        recognition.onresult = (event) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            const transcript = result[0].transcript.trim();
+            const isFinal = result.isFinal;
+
+            // 在页面上展示中间/最终结果
+            if (!isFinal) {
+              if (!interimElement) {
+                interimElement = document.createElement("div");
+                interimElement.className = "interim-message";
+                messagesDiv.appendChild(interimElement);
+              }
+              interimElement.innerHTML = `<strong>${
+                currentUser || "您"
+              } (识别中):</strong> ${transcript}`;
+              messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            } else {
+              // 最终结果：将临时转为正式消息或直接追加
+              const finalEl = document.createElement("div");
+              finalEl.innerHTML = `<strong>${
+                currentUser || "您"
+              }:</strong> ${transcript}`;
+              if (interimElement) {
+                messagesDiv.replaceChild(finalEl, interimElement);
+                interimElement = null;
+              } else {
+                messagesDiv.appendChild(finalEl);
+              }
+              messagesDiv.scrollTop = messagesDiv.scrollHeight;
+              // 把最终结果也填回输入框以便用户编辑/发送
+              messageInput.value = transcript;
+            }
+
+            // 通过 WebSocket 实时发送识别文本（streaming）
+            const payload = {
+              sender: currentUser || "未知",
+              text: transcript,
+              type: isFinal ? "final" : "interim",
+            };
+            try {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(payload));
+              }
+            } catch (e) {
+              console.error("发送识别结果失败", e);
+            }
+          }
+        };
+
+        recognition.onerror = (event) => {
+          console.error("语音识别错误:", event.error);
+          voiceButton.classList.remove("recording");
+          appendMessage("系统", "语音识别出错，请重试");
+        };
+
+        recognition.onend = () => {
+          voiceButton.classList.remove("recording");
+        };
+
+        voiceButton.addEventListener("click", () => {
+          if (voiceButton.classList.contains("recording")) {
+            recognition.stop();
+          } else {
+            // 清理输入与可能存在的临时元素
+            messageInput.value = "";
+            // 如果有残留的 interim element，移除
+            const leftover = messagesDiv.querySelector(".interim-message");
+            if (leftover) leftover.remove();
+            recognition.start();
+            voiceButton.classList.add("recording");
+          }
+        });
+      } else {
+        voiceButton.style.display = "none";
+        appendMessage("系统", "您的浏览器不支持语音识别功能");
+      }
+
+      // WebSocket 延后初始化（在获取到当前用户后建立连接）
+      let ws = null;
++      // 接收端缓冲：按 sender -> streamId 聚合分片
++      const incomingStreams = {}; // { sender: { streamId: { mimeType, parts: { seq: Blob }, seqs: [] } } }
++      // 每个 sender 的 pending 控制队列（用于将随后到达的二进制分片与前面的 control 匹配）
++      const pendingControls = {}; // { sender: [ { streamId, seq } ] }
++
++      // 生成随机 streamId（每次开始新的音频会话）
++      function generateStreamId() {
++        return Math.random().toString(36).substr(2, 9) + "-" + Date.now().toString(36);
++      }
++
++      // 方便向 pendingControls 添加项（本端记录，可选）
++      function pushPendingControl(sender, streamId, seq) {
++        pendingControls[sender] = pendingControls[sender] || [];
++        pendingControls[sender].push({ streamId, seq });
++      }
+       function initWebSocket() {
+         if (ws && ws.readyState === WebSocket.OPEN) return;
+         ws = new WebSocket(
+           (location.protocol === "https:" ? "wss://" : "ws://") + location.host
+         );
+
+         ws.onopen = () => {
+           appendMessage("系统", "已连接到服务器");
+         };
+
+-        ws.onmessage = async (event) => {
+-          try {
+-            // 文本控制消息（JSON 字符串）
+-            if (typeof event.data === "string") {
+-              const message = JSON.parse(event.data);
+-              // 音频控制消息
+-              if (message.type === "audio-start") {
+-                incomingAudioBuffers[message.sender] =
+-                  incomingAudioBuffers[message.sender] || [];
+-                appendMessage("系统", `${message.sender} 开始语音流`);
+-                return;
+-              }
+-              if (message.type === "audio-end") {
+-                const parts = incomingAudioBuffers[message.sender] || [];
+-                if (parts.length) {
+-                  const blob = new Blob(parts, {
+-                    type: message.mimeType || "audio/webm",
+-                  });
+-                  const url = URL.createObjectURL(blob);
+-                  const audio = new Audio(url);
+-                  audio
+-                    .play()
+-                    .catch((err) => console.error("播放音频失败", err));
+-                  delete incomingAudioBuffers[message.sender];
+-                }
+-                appendMessage("系统", `${message.sender} 结束语音流`);
+-                return;
+-              }
+-              if (message.type === "audio-chunk") {
+-                incomingAudioBuffers[message.sender] =
+-                  incomingAudioBuffers[message.sender] || [];
+-                return;
+-              }
+-
+-              // 普通文本消息
+-              appendMessage(message.sender, message.text);
+-            } else {
+-              // 二进制数据（Blob）
+-              const arrayBuffer = await event.data.arrayBuffer();
+-              // 将分片推入最近 activity 的 sender 缓冲（若只有一个存在则简单归属）
+-              const senders = Object.keys(incomingAudioBuffers);
+-              if (senders.length === 1) {
+-                const sender = senders[0];
+-                incomingAudioBuffers[sender].push(new Blob([arrayBuffer]));
+-              } else {
+-                // 多个并发时可能无法准确归属；这里记录警告
+-                console.warn("收到二进制音频但无法确定 sender，已丢弃");
+-              }
+-            }
+-          } catch (e) {
+-            console.error("解析消息失败", e);
+-          }
+-        };
++        ws.onmessage = async (event) => {
++          try {
++            if (typeof event.data === "string") {
++              const message = JSON.parse(event.data);
++              // audio-start: 创建流结构
++              if (message.type === "audio-start") {
++                incomingStreams[message.sender] = incomingStreams[message.sender] || {};
++                incomingStreams[message.sender][message.streamId] = {
++                  mimeType: message.mimeType || "audio/webm",
++                  parts: {},
++                  seqs: [],
++                };
++                pendingControls[message.sender] = pendingControls[message.sender] || [];
++                appendMessage("系统", `${message.sender} 开始语音流`);
++                return;
++              }
++
++              // audio-end: 合并并播放该流
++              if (message.type === "audio-end") {
++                const s = incomingStreams[message.sender] && incomingStreams[message.sender][message.streamId];
++                if (s) {
++                  const seqs = s.seqs.slice().sort((a,b)=>a-b);
++                  const parts = seqs.map((q) => s.parts[q]).filter(Boolean);
++                  if (parts.length) {
++                    const blob = new Blob(parts, { type: s.mimeType || "audio/webm" });
++                    const url = URL.createObjectURL(blob);
++                    const audio = new Audio(url);
++                    audio.play().catch((err) => console.error("播放音频失败", err));
++                  }
++                  delete incomingStreams[message.sender][message.streamId];
++                }
++                appendMessage("系统", `${message.sender} 结束语音流`);
++                return;
++              }
++
++              // audio-chunk: 记录控制元信息，等待随后二进制匹配
++              if (message.type === "audio-chunk") {
++                pendingControls[message.sender] = pendingControls[message.sender] || [];
++                incomingStreams[message.sender] = incomingStreams[message.sender] || {};
++                incomingStreams[message.sender][message.streamId] = incomingStreams[message.sender][message.streamId] || { mimeType: message.mimeType || "audio/webm", parts: {}, seqs: [] };
++                if (!incomingStreams[message.sender][message.streamId].seqs.includes(message.seq)) {
++                  incomingStreams[message.sender][message.streamId].seqs.push(message.seq);
++                }
++                pendingControls[message.sender].push({ streamId: message.streamId, seq: message.seq });
++                return;
++              }
++
++              // STT 识别结果（来自服务端）
++              if (message.type === "stt-result") {
++                const r = message.result || {};
++                const who = message.sender || "系统";
++                if (r.type === "interim") {
++                  const interimEl = document.createElement("div");
++                  interimEl.className = "interim-message";
++                  interimEl.innerHTML = `<strong>${who} (识别中):</strong> ${r.text}`;
++                  messagesDiv.appendChild(interimEl);
++                  messagesDiv.scrollTop = messagesDiv.scrollHeight;
++                } else if (r.type === "final") {
++                  appendMessage(who, r.text);
++                }
++                return;
++              }
++
++              // 普通文本消息
++              appendMessage(message.sender, message.text);
++            } else {
++              // 二进制数据（Blob）
++              const arrayBuffer = await event.data.arrayBuffer();
++              const senders = Object.keys(pendingControls).filter((s) => pendingControls[s] && pendingControls[s].length > 0);
++              if (senders.length === 0) {
++                console.warn("收到二进制音频但没有 pending 控制项，已丢弃");
++                return;
++              }
++              const sender = senders[0];
++              const pending = pendingControls[sender].shift();
++              if (!pending) {
++                console.warn("pending 控制项为空，丢弃分片");
++                return;
++              }
++              const { streamId, seq } = pending;
++              incomingStreams[sender] = incomingStreams[sender] || {};
++              incomingStreams[sender][streamId] = incomingStreams[sender][streamId] || { mimeType: "audio/webm", parts: {}, seqs: [] };
++              incomingStreams[sender][streamId].parts[seq] = new Blob([arrayBuffer]);
++            }
++          } catch (e) {
++            console.error("解析消息失败", e);
++          }
++        };

@@ -1,0 +1,539 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Paraformer 语音识别 HTTP API 服务
+提供 HTTP 接口供 Node.js WebSocket 服务器调用
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from funasr import AutoModel
+import tempfile
+import os
+import sys
+import traceback
+import logging
+import subprocess
+import shutil
+
+app = Flask(__name__)
+CORS(app)
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# 全局模型实例
+model = None
+ffmpeg_available = False
+
+def check_ffmpeg():
+    """检查 ffmpeg 是否可用"""
+    global ffmpeg_available
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        if result.returncode == 0:
+            ffmpeg_available = True
+            logger.info("✅ ffmpeg 可用")
+            return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    
+    # 尝试在 Scoop 路径中查找
+    scoop_ffmpeg = os.path.expanduser("~/scoop/shims/ffmpeg.exe")
+    if os.path.exists(scoop_ffmpeg):
+        try:
+            result = subprocess.run([scoop_ffmpeg, '-version'],
+                                  capture_output=True,
+                                  text=True,
+                                  timeout=5)
+            if result.returncode == 0:
+                ffmpeg_available = True
+                logger.info(f"✅ ffmpeg 可用 (Scoop): {scoop_ffmpeg}")
+                return True
+        except:
+            pass
+    
+    logger.warning("⚠️  ffmpeg 未找到，某些音频格式可能不支持")
+    ffmpeg_available = False
+    return False
+
+def convert_audio_to_wav(input_path, output_path):
+    """使用 ffmpeg 将音频转换为 WAV 格式"""
+    try:
+        # 检查输入文件
+        if not os.path.exists(input_path):
+            logger.error(f"❌ 输入文件不存在: {input_path}")
+            return False
+        
+        input_size = os.path.getsize(input_path)
+        if input_size < 100:
+            logger.error(f"❌ 输入文件过小: {input_size} 字节")
+            return False
+        
+        logger.info(f"📂 输入文件: {input_path} ({input_size} 字节)")
+        
+        ffmpeg_cmd = 'ffmpeg'
+        scoop_ffmpeg = os.path.expanduser("~/scoop/shims/ffmpeg.exe")
+        if os.path.exists(scoop_ffmpeg):
+            ffmpeg_cmd = scoop_ffmpeg
+            logger.info(f"🔧 使用 Scoop ffmpeg: {scoop_ffmpeg}")
+        
+        cmd = [
+            ffmpeg_cmd,
+            '-loglevel', 'warning',  # 减少日志输出
+            '-i', input_path,
+            '-ar', '16000',          # 采样率 16kHz
+            '-ac', '1',              # 单声道
+            '-acodec', 'pcm_s16le',  # PCM 编码
+            '-f', 'wav',             # 强制 WAV 格式
+            '-avoid_negative_ts', 'make_zero',  # 修复时间戳问题
+            '-y',                    # 覆盖输出文件
+            output_path
+        ]
+        
+        logger.info(f"🎬 执行 ffmpeg 转换...")
+        
+        result = subprocess.run(cmd, 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=30)
+        
+        if result.returncode == 0:
+            # 验证输出文件
+            if os.path.exists(output_path):
+                output_size = os.path.getsize(output_path)
+                logger.info(f"✅ 音频转换成功: {output_path} ({output_size} 字节)")
+                return True
+            else:
+                logger.error(f"❌ 输出文件未生成: {output_path}")
+                return False
+        else:
+            logger.error(f"❌ ffmpeg 转换失败 (退出码 {result.returncode})")
+            logger.error(f"stderr: {result.stderr}")
+            if result.stdout:
+                logger.error(f"stdout: {result.stdout}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.error(f"❌ ffmpeg 转换超时（>30秒）")
+        return False
+    except Exception as e:
+        logger.error(f"❌ 音频转换异常: {e}")
+        traceback.print_exc()
+        return False
+
+def initialize_model():
+    """初始化 Paraformer 模型"""
+    global model
+    logger.info("="*70)
+    logger.info("正在初始化 Paraformer 方言识别模型...")
+    logger.info("="*70)
+    
+    # 检查 ffmpeg
+    check_ffmpeg()
+    
+    try:
+        # 加载 Paraformer 模型
+        model = AutoModel(
+            model="paraformer-zh",
+            model_revision="v2.0.4",
+            device="cpu",  # 使用 CPU，如需 GPU 改为 "cuda"
+            disable_update=True,  # 禁用自动更新检查
+        )
+        logger.info("✅ 模型加载成功！")
+        logger.info(f"📁 模型缓存: {os.path.expanduser('~/.cache/modelscope')}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ 模型加载失败: {e}")
+        traceback.print_exc()
+        return False
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """健康检查接口"""
+    if model is None:
+        return jsonify({
+            'status': 'error',
+            'message': 'Model not initialized'
+        }), 503
+    return jsonify({
+        'status': 'ok',
+        'model': 'paraformer-zh',
+        'version': 'v2.0.4',
+        'ffmpeg': 'available' if ffmpeg_available else 'not_found'
+    })
+
+@app.route('/transcribe', methods=['POST'])
+def transcribe():
+    """
+    语音识别接口
+    
+    接受音频数据（二进制或 base64），返回识别文本
+    
+    请求格式：
+    - Content-Type: audio/* (二进制音频)
+    - Content-Type: application/json (JSON: { "audio": "base64_data", "format": "webm" })
+    
+    返回格式：
+    {
+        "success": true,
+        "text": "识别的文本内容",
+        "language": "zh"
+    }
+    """
+    if model is None:
+        return jsonify({
+            'success': False,
+            'error': 'Model not initialized'
+        }), 503
+    
+    try:
+        audio_data = None
+        file_ext = ".wav"
+        
+        # 获取音频数据
+        if request.content_type and 'audio' in request.content_type:
+            # 二进制音频数据
+            audio_data = request.data
+            
+            # 从 Content-Type 推断格式
+            if 'webm' in request.content_type:
+                file_ext = ".webm"
+            elif 'ogg' in request.content_type:
+                file_ext = ".ogg"
+            elif 'mp4' in request.content_type or 'm4a' in request.content_type:
+                file_ext = ".m4a"
+            elif 'mpeg' in request.content_type or 'mp3' in request.content_type:
+                file_ext = ".mp3"
+                
+        elif request.is_json:
+            # JSON 格式：base64 编码的音频
+            data = request.get_json()
+            import base64
+            audio_data = base64.b64decode(data.get('audio', ''))
+            file_ext = "." + data.get('format', 'wav')
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Unsupported content type'
+            }), 400
+        
+        if not audio_data:
+            return jsonify({
+                'success': False,
+                'error': 'No audio data received'
+            }), 400
+        
+        # 检查音频数据大小
+        if len(audio_data) < 100:
+            logger.warning(f"⚠️ 音频数据过小: {len(audio_data)} 字节，可能不包含有效语音")
+            return jsonify({
+                'success': True,
+                'text': '',
+                'language': 'zh',
+                'confidence': 0.0,
+                'message': '音频数据过小'
+            })
+        
+        logger.info(f"📥 收到音频数据: {len(audio_data)} 字节, 格式: {file_ext}")
+        
+        # 打印音频数据头部（用于调试）
+        if len(audio_data) > 16:
+            header_hex = audio_data[:16].hex()
+            logger.info(f"🔍 音频头部 (前16字节): {header_hex}")
+            
+            # 打印更多头部信息用于诊断
+            if len(audio_data) > 64:
+                header_64 = audio_data[:64].hex()
+                logger.info(f"🔍 音频头部 (前64字节): {header_64}")
+        
+        # 验证音频数据（检查 WebM 头部）
+        if file_ext == '.webm':
+            # WebM 文件应该以 0x1A 0x45 0xDF 0xA3 开头（EBML 头部）
+            if len(audio_data) > 4:
+                header = audio_data[:4]
+                expected_header = b'\x1a\x45\xdf\xa3'
+                
+                if header != expected_header:
+                    logger.warning(f"⚠️ WebM 头部不匹配")
+                    logger.warning(f"   期望: {expected_header.hex()}")
+                    logger.warning(f"   实际: {header.hex()}")
+                    
+                    # 尝试在前 2KB 范围内查找 WebM EBML 标识
+                    search_length = min(len(audio_data), 2048)
+                    webm_pos = audio_data[:search_length].find(b'\x1a\x45\xdf\xa3')
+                    
+                    if webm_pos > 0:
+                        logger.info(f"✅ 在位置 {webm_pos} 找到 WebM 头部，截取有效部分")
+                        audio_data = audio_data[webm_pos:]
+                        logger.info(f"   修正后数据大小: {len(audio_data)} 字节")
+                    elif webm_pos < 0:
+                        # 没有找到 WebM 头部
+                        logger.warning("⚠️ 未找到 WebM EBML 头部标识")
+                        logger.warning("   这可能是 MediaRecorder 的中间数据块")
+                        logger.warning("   将尝试继续处理，但可能失败")
+                        
+                        # 检查是否是其他音频格式
+                        if audio_data[:4] == b'RIFF':
+                            logger.info("   检测到 RIFF 头部，可能是 WAV 格式")
+                            file_ext = '.wav'
+                        elif audio_data[:3] == b'ID3' or audio_data[:2] == b'\xff\xfb':
+                            logger.info("   检测到 MP3 标识")
+                            file_ext = '.mp3'
+                else:
+                    logger.info(f"✅ WebM EBML 头部验证通过")
+        
+        # 将音频保存到临时文件
+        with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as temp_file:
+            temp_path = temp_file.name
+            temp_file.write(audio_data)
+            temp_file.flush()  # 确保数据写入磁盘
+        
+        try:
+            logger.info(f"🎤 正在识别音频: {temp_path} ({len(audio_data)} 字节)")
+            
+            # 如果不是 WAV 格式且 ffmpeg 可用，尝试转换
+            final_audio_path = temp_path
+            converted = False
+            
+            if file_ext.lower() != '.wav' and ffmpeg_available:
+                logger.info(f"🔄 尝试将 {file_ext} 转换为 WAV 格式...")
+                wav_path = temp_path.replace(file_ext, '.wav')
+                
+                # 先检查输入文件大小
+                input_size = os.path.getsize(temp_path)
+                logger.info(f"   输入文件大小: {input_size} 字节")
+                
+                if convert_audio_to_wav(temp_path, wav_path):
+                    # 验证转换后的文件是否存在且有效
+                    if os.path.exists(wav_path):
+                        output_size = os.path.getsize(wav_path)
+                        logger.info(f"   输出文件大小: {output_size} 字节")
+                        
+                        if output_size > 100:
+                            final_audio_path = wav_path
+                            converted = True
+                            logger.info(f"✅ 使用转换后的 WAV 文件")
+                        else:
+                            logger.error(f"❌ 转换后的 WAV 文件过小 ({output_size} 字节)")
+                            # 继续尝试使用原始文件
+                            logger.info(f"⚠️ 尝试直接使用原始文件")
+                    else:
+                        logger.error(f"❌ 转换后的文件不存在: {wav_path}")
+                        # 继续尝试使用原始文件
+                        logger.info(f"⚠️ 尝试直接使用原始文件")
+                else:
+                    logger.warning(f"⚠️ FFmpeg 转换失败，尝试直接识别原始文件")
+                    # 不返回错误，而是尝试直接使用原始文件
+            elif file_ext.lower() != '.wav' and not ffmpeg_available:
+                logger.warning("⚠️ 未安装 ffmpeg，尝试直接识别非 WAV 格式文件")
+                # 不返回错误，让模型尝试处理
+            
+            # 执行识别
+            logger.info(f"🎯 开始识别: {final_audio_path}")
+            logger.info(f"   文件存在: {os.path.exists(final_audio_path)}")
+            logger.info(f"   文件大小: {os.path.getsize(final_audio_path)} 字节")
+            
+            try:
+                result = model.generate(input=final_audio_path)
+                
+                if not result or len(result) == 0:
+                    logger.warning("⚠️ 模型返回空结果")
+                    return jsonify({
+                        'success': True,
+                        'text': '',
+                        'language': 'zh',
+                        'confidence': 0.0,
+                        'message': '未检测到有效语音'
+                    })
+                    
+            except Exception as model_error:
+                logger.error(f"❌ 模型识别异常: {model_error}")
+                logger.error(f"   异常类型: {type(model_error).__name__}")
+                traceback.print_exc()
+                
+                error_msg = str(model_error)
+                error_lower = error_msg.lower()
+                
+                # 详细的错误分类
+                if 'format' in error_lower or 'codec' in error_lower or 'decode' in error_lower:
+                    return jsonify({
+                        'success': False,
+                        'error': '音频格式处理失败',
+                        'detail': error_msg,
+                        'suggestion': '音频数据可能不完整或格式不正确，请重新录音'
+                    }), 500
+                elif 'sample' in error_lower or 'rate' in error_lower:
+                    return jsonify({
+                        'success': False,
+                        'error': '音频采样率不支持',
+                        'detail': error_msg,
+                        'suggestion': '请确保音频采样率为 16kHz'
+                    }), 500
+                elif 'channel' in error_lower:
+                    return jsonify({
+                        'success': False,
+                        'error': '音频通道数不支持',
+                        'detail': error_msg,
+                        'suggestion': '请使用单声道音频'
+                    }), 500
+                else:
+                    # 其他未知错误
+                    return jsonify({
+                        'success': False,
+                        'error': '识别失败',
+                        'detail': error_msg,
+                        'suggestion': '请检查音频质量并重试'
+                    }), 500
+            
+            # 清理转换的临时文件
+            if converted and os.path.exists(final_audio_path):
+                try:
+                    os.unlink(final_audio_path)
+                except:
+                    pass
+            
+            if result and len(result) > 0:
+                text = result[0].get("text", "")
+                logger.info(f"✅ 识别成功: {text}")
+                
+                return jsonify({
+                    'success': True,
+                    'text': text,
+                    'language': 'zh',
+                    'confidence': 1.0
+                })
+            else:
+                logger.warning("⚠️ 未识别到内容")
+                return jsonify({
+                    'success': True,
+                    'text': '',
+                    'language': 'zh',
+                    'confidence': 0.0
+                })
+        finally:
+            # 清理临时文件
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+                
+    except Exception as e:
+        logger.error(f"❌ 识别失败: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/transcribe-stream', methods=['POST'])
+def transcribe_stream():
+    """
+    流式语音识别接口（累积多个音频分片）
+    
+    请求格式（JSON）：
+    {
+        "audio": "base64_encoded_audio_chunk",
+        "format": "webm",
+        "streamId": "unique-stream-id",
+        "isLast": false
+    }
+    
+    返回格式：
+    {
+        "success": true,
+        "text": "中间结果文本",
+        "isFinal": false
+    }
+    """
+    if model is None:
+        return jsonify({
+            'success': False,
+            'error': 'Model not initialized'
+        }), 503
+    
+    try:
+        data = request.get_json()
+        stream_id = data.get('streamId', 'unknown')
+        is_last = data.get('isLast', False)
+        
+        import base64
+        audio_data = base64.b64decode(data.get('audio', ''))
+        file_ext = "." + data.get('format', 'webm')
+        
+        if not audio_data:
+            return jsonify({
+                'success': False,
+                'error': 'No audio data'
+            }), 400
+        
+        # 保存临时文件
+        with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as temp_file:
+            temp_path = temp_file.name
+            temp_file.write(audio_data)
+        
+        try:
+            # 执行识别
+            result = model.generate(input=temp_path)
+            
+            text = ""
+            if result and len(result) > 0:
+                text = result[0].get("text", "")
+            
+            logger.info(f"🎤 流式识别 [{stream_id}] isFinal={is_last}: {text}")
+            
+            return jsonify({
+                'success': True,
+                'text': text,
+                'isFinal': is_last,
+                'streamId': stream_id
+            })
+        finally:
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+                
+    except Exception as e:
+        logger.error(f"❌ 流式识别失败: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+def main():
+    """主函数"""
+    print("\n" + "="*70)
+    print("🎙️  Paraformer 方言识别 API 服务")
+    print("="*70)
+    print(f"🐍 Python: {sys.version.split()[0]}")
+    print(f"💾 工作目录: {os.getcwd()}")
+    print("="*70)
+    
+    # 初始化模型
+    if not initialize_model():
+        print("\n❌ 模型初始化失败，服务无法启动")
+        sys.exit(1)
+    
+    print("\n" + "="*70)
+    print("✅ API 服务启动成功！")
+    print("="*70)
+    print("\n📡 API 端点:")
+    print("  - GET  /health           : 健康检查")
+    print("  - POST /transcribe       : 单次语音识别")
+    print("  - POST /transcribe-stream: 流式语音识别")
+    print("\n🌐 监听地址: http://127.0.0.1:5000")
+    print("="*70 + "\n")
+    
+    # 启动 Flask 服务
+    app.run(host='127.0.0.1', port=5000, debug=False, threaded=True)
+
+if __name__ == "__main__":
+    main()
