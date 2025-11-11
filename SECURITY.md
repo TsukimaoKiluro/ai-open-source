@@ -7,14 +7,6 @@ Initial open-source release: v0.1.0 (preview). Future versions will list explici
 ## Reporting a Vulnerability
 
 Please DO NOT create a public issue for security problems.
-Instead email: security@example.com with:
-
-- Description of the issue
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
-
-You will receive an acknowledgment within 72 hours.
 
 ## Disclosure
 
